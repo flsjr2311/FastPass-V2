@@ -1,0 +1,55 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{BE9EA548-BEA2-45B8-9A22-09CD41270686}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FastPass.Domain", "src\FastPass.Domain\FastPass.Domain.csproj", "{FEC73832-45E6-4D3F-899F-91F95195067D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FastPass.Application", "src\FastPass.Application\FastPass.Application.csproj", "{26896C7F-EF8E-41C7-BB75-E62AD06995BA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FastPass.Infrastructure", "src\FastPass.Infrastructure\FastPass.Infrastructure.csproj", "{7762DE60-F2E1-48E1-8375-F16809A9E3F4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FastPass.Api", "src\FastPass.Api\FastPass.Api.csproj", "{886259C7-A11E-4B0F-BFF1-4093FB51FDCD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FastPass.Worker", "src\FastPass.Worker\FastPass.Worker.csproj", "{BAEA2DA7-40A3-4A9B-9811-8081B0B6DAA4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FEC73832-45E6-4D3F-899F-91F95195067D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FEC73832-45E6-4D3F-899F-91F95195067D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FEC73832-45E6-4D3F-899F-91F95195067D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FEC73832-45E6-4D3F-899F-91F95195067D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{26896C7F-EF8E-41C7-BB75-E62AD06995BA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{26896C7F-EF8E-41C7-BB75-E62AD06995BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{26896C7F-EF8E-41C7-BB75-E62AD06995BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{26896C7F-EF8E-41C7-BB75-E62AD06995BA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7762DE60-F2E1-48E1-8375-F16809A9E3F4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7762DE60-F2E1-48E1-8375-F16809A9E3F4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7762DE60-F2E1-48E1-8375-F16809A9E3F4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7762DE60-F2E1-48E1-8375-F16809A9E3F4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{886259C7-A11E-4B0F-BFF1-4093FB51FDCD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{886259C7-A11E-4B0F-BFF1-4093FB51FDCD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{886259C7-A11E-4B0F-BFF1-4093FB51FDCD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{886259C7-A11E-4B0F-BFF1-4093FB51FDCD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BAEA2DA7-40A3-4A9B-9811-8081B0B6DAA4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BAEA2DA7-40A3-4A9B-9811-8081B0B6DAA4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BAEA2DA7-40A3-4A9B-9811-8081B0B6DAA4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BAEA2DA7-40A3-4A9B-9811-8081B0B6DAA4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FEC73832-45E6-4D3F-899F-91F95195067D} = {BE9EA548-BEA2-45B8-9A22-09CD41270686}
+		{26896C7F-EF8E-41C7-BB75-E62AD06995BA} = {BE9EA548-BEA2-45B8-9A22-09CD41270686}
+		{7762DE60-F2E1-48E1-8375-F16809A9E3F4} = {BE9EA548-BEA2-45B8-9A22-09CD41270686}
+		{886259C7-A11E-4B0F-BFF1-4093FB51FDCD} = {BE9EA548-BEA2-45B8-9A22-09CD41270686}
+		{BAEA2DA7-40A3-4A9B-9811-8081B0B6DAA4} = {BE9EA548-BEA2-45B8-9A22-09CD41270686}
+	EndGlobalSection
+EndGlobal
