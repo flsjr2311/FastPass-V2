@@ -1,6 +1,6 @@
 # FastPass V2
 
-Sistema de controle de acesso para eventos com validação em tempo real de ingressos e credenciais de staff via catracas, app mobile e API.
+Sistema de controle de acesso para eventos com validação em tempo real de ingressos e crachás de acesso físico via catracas, app mobile e API.
 
 ## Visao Geral
 
@@ -75,14 +75,18 @@ O FastPass V2 gerencia todo o ciclo de vida de controle de acesso em eventos: de
 ### Ingressos
 - Tipos de ingresso (com/sem reentrada)
 - Lotes com limites de quantidade e período de venda
+- Campo de lote (`batch_name`) por ticket, lido do CSV
+- Setor vinculado ao ticket
 - Emissão individual
-- Importação CSV com preview (separador automático, mapeamento de colunas)
+- Importação CSV com preview (separador automático, mapeamento de colunas: código, ID externo, setor, lote, status)
 - Modos: Adicionar+Atualizar, Só Adicionar, Só Atualizar
-- Alteração de status em massa
+- Tela de tickets com busca por código, filtro por status e alteração de status (individual e em massa)
 
 ### Validação de Acesso (Core)
 - Endpoints: `/api/access/app/validate`, `/api/access/turnstile/validate`, `/api/access/validate`
-- Validação de tickets e crachás de staff
+- Validação de tickets e crachás de acesso físico de usuários
+- **Direção inferida automaticamente** pela portaria e pelo estado do ticket (não precisa enviar no request)
+- **Restrição por setor**: ticket só é liberado na portaria associada ao seu setor
 - Políticas configuráveis (allow/deny por tipo, lote, portaria, setor, direção)
 - Idempotência por `IdempotencyKey`
 - Resposta com: decisão, ação do braço, pictograma, mensagem configurável
@@ -93,10 +97,10 @@ O FastPass V2 gerencia todo o ciclo de vida de controle de acesso em eventos: de
 - Override por evento
 - Restauração ao padrão
 
-### Staff (Colaboradores)
-- Cadastro de membros e credenciais (crachás)
-- Permissão de acesso por evento/portaria/setor
-- Validação de crachá no mesmo fluxo de tickets
+### Crachá de Acesso Físico (Usuários)
+- Habilitado por usuário (`physical_access_enabled` + `access_badge_code`)
+- Validado direto pela tabela de usuários, no mesmo fluxo dos tickets
+- Autorização pelo escopo de eventos/portarias do usuário
 
 ### Relatórios
 - Histórico de tentativas de acesso (filtros, paginação)
@@ -154,8 +158,8 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 | Migração | Descrição |
 |----------|-----------|
 | 001 | Schema inicial (eventos, tickets, portarias, setores, dispositivos, tentativas) |
-| 002 | Credenciais de staff |
-| 003 | Chave de acesso staff |
+| 002 | Credenciais de staff *(removido na 018)* |
+| 003 | Chave de acesso staff *(removido na 018)* |
 | 004 | Setor na tentativa de acesso |
 | 005 | Validação de catraca (turnstile) |
 | 006 | Mensagens de acesso configuráveis |
@@ -164,10 +168,13 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 | 009 | Importação de tickets |
 | 010 | Fix colunas de importação |
 | 011 | Clientes (organizadores) |
-| 012 | Código staff opcional |
+| 012 | Código staff opcional *(removido na 018)* |
 | 013 | Acesso físico por usuário |
 | 014 | Templates de mensagem globais |
 | 015 | Setor no ticket |
+| 016 | Códigos legíveis (evento/portaria/setor) |
+| 017 | Lote (batch_name) no ticket |
+| 018 | Remoção completa da função de staff |
 
 ## Endpoints Principais
 
@@ -205,6 +212,15 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 
 ## Pendências e Roadmap
 
+### Concluído recentemente (v2.1.0)
+- [x] Frontend web (login, dashboard, catálogo, tickets, auditoria, importação, relatórios)
+- [x] Direção de acesso inferida automaticamente
+- [x] Restrição de ticket por setor da portaria
+- [x] Crachá de acesso físico validado direto por usuário (staff removido)
+- [x] Códigos legíveis (evento/portaria/setor)
+- [x] Lote (batch_name) no ticket via CSV
+- [x] Busca/filtro/alteração de status na tela de tickets
+
 ### Prioridade Alta
 - [ ] **Integração com catracas Vcom** — comunicação serial/TCP com catracas USR-Vcom
 - [ ] **Integração MQTT** — comunicação com catracas via broker MQTT
@@ -219,7 +235,6 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 - [ ] CI/CD pipeline
 
 ### Prioridade Baixa
-- [ ] Frontend web completo (dashboard administrativo)
 - [ ] Modo offline no app Android
 - [ ] Rate limiting no login
 - [ ] Logs estruturados (Serilog)

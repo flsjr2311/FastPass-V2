@@ -1,5 +1,70 @@
 # Release Notes — FastPass V2
 
+## v2.1.0 - Evolução do núcleo (2026)
+
+Rodada de correções, refinamentos operacionais e limpeza estrutural preparando o terreno para a integração com dispositivos (catracas).
+
+---
+
+### Novidades
+
+#### Validação de acesso
+- **Direção inferida automaticamente**: o app/catraca não precisa mais enviar `Direction`. O sistema decide:
+  - Portaria "entrada validada, saída livre" → sempre entrada
+  - Portaria "entrada e saída validadas" → entrada se o ticket está fora, saída se está dentro (`people_inside`)
+- **Restrição por setor**: um ticket só é liberado na portaria associada ao setor do próprio ticket (via matriz portaria×setor). Tickets sem setor passam em qualquer portaria.
+- Autorização concedida por padrão quando não há políticas configuradas (a matriz portaria×setor é a restrição operacional).
+
+#### Crachá de acesso físico do usuário
+- O crachá de acesso físico agora é validado **diretamente pela tabela de usuários** (`fp_users.access_badge_code` + `physical_access_enabled`), sem depender das tabelas de staff.
+- Autorização do crachá usa o escopo de eventos/portarias do próprio usuário.
+
+#### Códigos legíveis
+- Novo campo `code` numérico e legível para facilitar digitação/seleção nos dispositivos:
+  - Eventos: sequencial global
+  - Portarias e setores: sequencial por evento
+- O `id` (GUID) permanece como chave interna; o `code` é apenas um identificador curto amigável.
+
+#### Ingressos
+- Novo campo de **lote** (`batch_name`) no ticket, lido da planilha de importação (coluna configurável ou valor padrão).
+- Tela de Tickets com **busca por código**, **filtro por status** e **alteração de status** direto na tabela (ativo/cancelado/revogado) — requer permissão `ticket.status`.
+- Colunas de **Setor** e **Lote** na listagem de tickets.
+
+#### Relatórios e auditoria
+- Correção do cálculo de **cobertura por setor** (não passa mais de 100%): conta tickets que pertencem ao setor, não tentativas na portaria.
+- Correção do card **"Usados"**: conta tickets com pelo menos uma entrada (`entries_used > 0`), não status literal.
+- Feed de "Últimos acessos" no Dashboard mostra o **setor do ingresso** entre parênteses.
+- Nova coluna **"Setor do Ingresso"** na auditoria de acessos (setor do ticket, distinto do setor da portaria).
+
+#### Frontend
+- Frontend web React + Vite (tela de login, dashboard, catálogo, tickets, auditoria, importação, relatórios).
+- Correção do proxy Vite para a porta atual da API (5088).
+
+#### Ferramentas
+- Script de teste de carga inteligente (`tools/load-test`): envia cada ticket para a portaria correta do seu setor e simula ~10% de erros (código inexistente, ticket cancelado, portaria errada, reentrada).
+
+---
+
+### Removido
+
+- **Função de Staff (colaboradores)** completamente removida: tabelas `fp_staff_members`, `fp_staff_credentials`, `fp_staff_event_access`, coluna `fp_users.staff_member_id`, serviço, contratos, entidades, endpoints `/api/staff`, permissão `staff.gerenciar` e tela do frontend.
+- O crachá de acesso físico foi preservado migrando a validação para a tabela de usuários.
+
+---
+
+### Migrações de banco (016–018)
+
+| # | Arquivo | Conteúdo |
+|---|---------|----------|
+| 016 | `016_readable_codes.sql` | Campo `code`/`code_num` legível em eventos, portarias e setores (com backfill) |
+| 017 | `017_ticket_batch_name.sql` | Campo `batch_name` (lote) em tickets, lido do CSV |
+| 018 | `018_remove_staff.sql` | Remove tabelas de staff, coluna `staff_member_id` e FK de `access_attempts` |
+
+### Limpeza de dados
+- Removidas portarias órfãs (smoke tests), setores inativos e locais sem evento.
+
+---
+
 ## v2.0.0 - Commit Inicial (2025)
 
 Primeira versão funcional completa do backend FastPass V2 — reescrita total do sistema legado com arquitetura moderna.
