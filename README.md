@@ -118,7 +118,12 @@ O FastPass V2 gerencia todo o ciclo de vida de controle de acesso em eventos: de
 ### Administração
 - Reset de contadores de acesso
 - Exclusão de dados de evento (com confirmação)
-- Auditoria de ações administrativas
+- Reset de senha de outro usuário por administrador (não exige a senha atual; limpa bloqueio e revoga sessões)
+
+### Trilhas de auditoria (requer `auditoria.ler`)
+- **Acessos ao sistema** (`fp_login_log`): tentativas de login com desfecho (sucesso, senha inválida, usuário inexistente, conta bloqueada, usuário inativo), usuário, IP e dispositivo.
+- **Trilha de auditoria de ações** (`fp_audit_trail`): toda ação que muda estado (POST/PUT/DELETE/PATCH bem-sucedidos) capturada por middleware — quem, quando, ação legível, método+rota, alvo, status e resumo do corpo com senhas/tokens mascarados.
+- Duas telas dedicadas no grupo Logs, com filtros e paginação. Gravação *best-effort* (nunca interrompe a operação).
 
 ## Pré-requisitos
 
@@ -181,6 +186,8 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 | 016 | Códigos legíveis (evento/portaria/setor) |
 | 017 | Lote (batch_name) no ticket |
 | 018 | Remoção completa da função de staff |
+| 019 | Trilha de acessos ao sistema (`fp_login_log`) |
+| 020 | Trilha de auditoria de ações (`fp_audit_trail`) |
 
 ## Endpoints Principais
 
@@ -217,6 +224,13 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 | POST | `/api/access/manual/validate` | Validação manual pelo operador (requer sessão + `acesso.validar`) |
 | POST | `/api/access/validate` | Validação genérica |
 
+### Usuários e auditoria
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| POST | `/api/users/{id}/reset-password` | Reset de senha por admin (requer `usuario.gerenciar`) |
+| GET | `/api/login-log` | Trilha de acessos ao sistema (requer `auditoria.ler`) |
+| GET | `/api/audit-trail` | Trilha de auditoria de ações (requer `auditoria.ler`) |
+
 ## Pendências e Roadmap
 
 ### Concluído recentemente (v2.1.0)
@@ -228,6 +242,8 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 - [x] Lote (batch_name) no ticket via CSV
 - [x] Busca/filtro/alteração de status na tela de tickets (restrita por permissão)
 - [x] Validação manual pelo operador (canal Manual, marcado na auditoria)
+- [x] Reset de senha de outro usuário por administrador
+- [x] Trilha de acessos ao sistema (login) e trilha de auditoria de ações (middleware)
 
 ### Prioridade Alta
 - [ ] **Integração com catracas Vcom** — comunicação serial/TCP com catracas USR-Vcom

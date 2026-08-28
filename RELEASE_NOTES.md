@@ -49,9 +49,17 @@ Rodada de correções, refinamentos operacionais e limpeza estrutural preparando
 - Feed de "Últimos acessos" no Dashboard mostra o **setor do ingresso** entre parênteses.
 - Nova coluna **"Setor do Ingresso"** na auditoria de acessos (setor do ticket, distinto do setor da portaria).
 
+#### Auditoria e segurança
+- **Reset de senha por administrador**: quem tem `usuario.gerenciar` pode redefinir a senha de outro usuário sem informar a senha atual (botão "Redefinir senha" na tela de Usuários). O reset limpa tentativas falhas/bloqueio e revoga as sessões ativas do usuário. Endpoint `POST /api/users/{id}/reset-password`.
+- **Trilha de acessos ao sistema** (`fp_login_log`): registra cada tentativa de login com o desfecho (`Success`, `InvalidPassword`, `UnknownUser`, `Blocked`, `Inactive`), usuário, IP e dispositivo. Nova tela **"Acessos ao sistema"** no grupo Logs.
+- **Trilha de auditoria de ações** (`fp_audit_trail`): captura, de forma centralizada por middleware, toda requisição que muda estado (POST/PUT/DELETE/PATCH) e conclui com sucesso — criação, edição, exclusão, importação, reset de senha, validação manual, etc. Registra usuário, ação legível (ex.: "Criou usuário", "Excluiu perfil"), método+rota, alvo, status e um resumo do corpo com **campos sensíveis mascarados** (senha, token). Nova tela **"Trilha de auditoria"** no grupo Logs.
+- Ambas as telas exigem a permissão `auditoria.ler` e têm filtros (usuário, desfecho/ação) e paginação. Endpoints `GET /api/login-log` e `GET /api/audit-trail`.
+- A gravação das trilhas é *best-effort*: uma falha ao registrar nunca interrompe o login nem a operação do usuário.
+
 #### Frontend
 - Frontend web React + Vite (tela de login, dashboard, catálogo, tickets, auditoria, importação, relatórios).
 - Correção do proxy Vite para a porta atual da API (5088).
+- Menu lateral em **accordion** (um grupo aberto por vez, fechados por padrão) e sidebar fixa sem estouro de tela.
 
 #### Ferramentas
 - Script de teste de carga inteligente (`tools/load-test`): envia cada ticket para a portaria correta do seu setor e simula ~10% de erros (código inexistente, ticket cancelado, portaria errada, reentrada).
@@ -65,13 +73,15 @@ Rodada de correções, refinamentos operacionais e limpeza estrutural preparando
 
 ---
 
-### Migrações de banco (016–018)
+### Migrações de banco (016–020)
 
 | # | Arquivo | Conteúdo |
 |---|---------|----------|
 | 016 | `016_readable_codes.sql` | Campo `code`/`code_num` legível em eventos, portarias e setores (com backfill) |
 | 017 | `017_ticket_batch_name.sql` | Campo `batch_name` (lote) em tickets, lido do CSV |
 | 018 | `018_remove_staff.sql` | Remove tabelas de staff, coluna `staff_member_id` e FK de `access_attempts` |
+| 019 | `019_login_log.sql` | Tabela `fp_login_log` (trilha de acessos ao sistema / login) |
+| 020 | `020_audit_trail.sql` | Tabela `fp_audit_trail` (trilha de auditoria de ações no sistema) |
 
 ### Limpeza de dados
 - Removidas portarias órfãs (smoke tests), setores inativos e locais sem evento.
