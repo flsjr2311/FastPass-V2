@@ -339,7 +339,19 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         {
             reason = "Ingresso inativo.";
         }
-        else if (command.SectorId.HasValue && !await HasActiveGateSectorAsync(
+        else if (ticket.SectorId.HasValue && !await HasActiveGateSectorAsync(
+                     connection,
+                     transaction,
+                     command.EventId,
+                     command.GateId,
+                     ticket.SectorId.Value,
+                     direction,
+                     now,
+                     cancellationToken))
+        {
+            reason = "Portaria sem autorização para o setor deste ingresso.";
+        }
+        else if (command.SectorId.HasValue && command.SectorId != ticket.SectorId && !await HasActiveGateSectorAsync(
                      connection,
                      transaction,
                      command.EventId,
@@ -538,7 +550,7 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         sql.Transaction = transaction;
         sql.CommandText = """
             SELECT id, ticket_type_id, batch_id, status, maximum_uses, uses,
-                   maximum_entries, entries_used, people_inside
+                   maximum_entries, entries_used, people_inside, sector_id
             FROM fp_tickets
             WHERE event_id = @event_id
               AND code = @code
@@ -563,7 +575,8 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             Convert.ToInt32(reader.GetValue(5)),
             Convert.ToInt32(reader.GetValue(6)),
             Convert.ToInt32(reader.GetValue(7)),
-            Convert.ToInt32(reader.GetValue(8)));
+            Convert.ToInt32(reader.GetValue(8)),
+            ReadNullableGuid(reader, 9));
     }
 
     private static async Task<bool> HasActiveGateSectorAsync(
@@ -973,7 +986,8 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         int Uses,
         int MaximumEntries,
         int EntriesUsed,
-        int PeopleInside);
+        int PeopleInside,
+        Guid? SectorId);
 
     private sealed record CredentialData(
         Guid CredentialId,
