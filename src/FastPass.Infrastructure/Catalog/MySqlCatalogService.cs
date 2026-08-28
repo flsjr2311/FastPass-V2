@@ -250,9 +250,11 @@ public sealed class MySqlCatalogService : ICatalogService
 
             await ExecuteAsync(connection, transaction, """
                 INSERT INTO fp_events
-                    (id, venue_id, client_id, name, organizer, starts_at, ends_at, status, created_at, updated_at)
+                    (id, venue_id, client_id, name, organizer, starts_at, ends_at, status, code, created_at, updated_at)
                 VALUES
-                    (@id, @venue_id, @client_id, @name, @organizer, @starts_at, @ends_at, @status, @created_at, @updated_at);
+                    (@id, @venue_id, @client_id, @name, @organizer, @starts_at, @ends_at, @status,
+                     (SELECT next_code FROM (SELECT COALESCE(MAX(code),0)+1 AS next_code FROM fp_events) AS e),
+                     @created_at, @updated_at);
                 """, cancellationToken,
                 ("@id", id.ToString()),
                 ("@venue_id", command.VenueId.ToString()),
@@ -396,9 +398,11 @@ public sealed class MySqlCatalogService : ICatalogService
                 id = Guid.NewGuid();
                 await ExecuteAsync(connection, transaction, """
                     INSERT INTO fp_sectors
-                        (id, event_id, name, capacity, active, created_at, updated_at)
+                        (id, event_id, name, capacity, active, code_num, created_at, updated_at)
                     VALUES
-                        (@id, @event_id, @name, @capacity, 1, @created_at, @updated_at);
+                        (@id, @event_id, @name, @capacity, 1,
+                         (SELECT next_code FROM (SELECT COALESCE(MAX(code_num),0)+1 AS next_code FROM fp_sectors WHERE event_id=@event_id) AS s),
+                         @created_at, @updated_at);
                     """, cancellationToken,
                     ("@id", id.ToString()),
                     ("@event_id", eventId.ToString()),
@@ -841,14 +845,17 @@ public sealed class MySqlCatalogService : ICatalogService
                 id = Guid.NewGuid();
                 await ExecuteAsync(connection, transaction, """
                     INSERT INTO fp_gates
-                        (id, venue_id, name, code, active, created_at, updated_at)
+                        (id, venue_id, name, code, active, code_num, created_at, updated_at)
                     VALUES
-                        (@id, @venue_id, @name, @code, 1, @created_at, @updated_at);
+                        (@id, @venue_id, @name, @code, 1,
+                         (SELECT next_code FROM (SELECT COALESCE(MAX(g.code_num),0)+1 AS next_code FROM fp_gates g INNER JOIN fp_event_gates eg ON eg.gate_id = g.id WHERE eg.event_id=@event_id) AS gc),
+                         @created_at, @updated_at);
                     """, cancellationToken,
                     ("@id", id.ToString()),
                     ("@venue_id", venueId.Value.ToString()),
                     ("@name", normalizedName),
                     ("@code", (object?)normalizedCode ?? DBNull.Value),
+                    ("@event_id", eventId.ToString()),
                     ("@created_at", now),
                     ("@updated_at", now));
 
@@ -1372,7 +1379,7 @@ public sealed class MySqlCatalogService : ICatalogService
         command.CommandText = """
             SELECT t.id, t.batch_id, t.ticket_type_id, t.external_id, t.code, t.maximum_uses, t.uses,
                    t.maximum_entries, t.entries_used, t.people_inside, t.status, t.metadata_json, t.created_at,
-                   t.sector_id, s.name
+                   t.sector_id, s.name, t.batch_name
             FROM fp_tickets t
             LEFT JOIN fp_sectors s ON s.id = t.sector_id
             WHERE t.event_id = @event_id
@@ -1410,7 +1417,8 @@ public sealed class MySqlCatalogService : ICatalogService
                 Convert.ToInt32(reader.GetValue(8)),
                 Convert.ToInt32(reader.GetValue(9)),
                 ReadNullableGuid(reader, 13),
-                reader.IsDBNull(14) ? null : reader.GetString(14)));
+                reader.IsDBNull(14) ? null : reader.GetString(14),
+                reader.IsDBNull(15) ? null : reader.GetString(15)));
         }
 
         return result;

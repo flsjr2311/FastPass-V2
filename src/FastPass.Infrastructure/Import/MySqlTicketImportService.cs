@@ -228,6 +228,14 @@ public sealed class MySqlTicketImportService : ITicketImportService
                             sectorId = resolvedSectorId;
                     }
 
+                    // Resolve lote (batch): coluna do CSV tem precedência; cai para o padrão do formulário.
+                    string? batchName = string.IsNullOrWhiteSpace(command.DefaultBatchName) ? null : command.DefaultBatchName.Trim();
+                    if (command.ColBatch.HasValue)
+                    {
+                        var rawBatch = GetCell(cells, command.ColBatch.Value)?.Trim();
+                        if (!string.IsNullOrWhiteSpace(rawBatch)) batchName = rawBatch;
+                    }
+
                     var existingId = await ScalarTx(conn, tx,
                         "SELECT id FROM fp_tickets WHERE event_id=@eid AND code=@code LIMIT 1;",
                         ct, ("@eid", command.EventId.ToString()), ("@code", code));
@@ -250,16 +258,17 @@ public sealed class MySqlTicketImportService : ITicketImportService
                             var n = DateTime.UtcNow;
                             await ExecTx(conn, tx, """
                                 INSERT INTO fp_tickets
-                                    (id,event_id,batch_id,ticket_type_id,sector_id,external_id,code,
+                                    (id,event_id,batch_id,ticket_type_id,sector_id,batch_name,external_id,code,
                                      maximum_uses,uses,maximum_entries,entries_used,
                                      people_inside,status,created_at,updated_at)
                                 VALUES
-                                    (@id,@eid,@bid,@tid,@sid,@extid,@code,
+                                    (@id,@eid,@bid,@tid,@sid,@bname,@extid,@code,
                                      @me,0,@me,0,0,@status,@now,@now);
                                 """, ct,
                                 ("@id", ticketId.ToString()), ("@eid", command.EventId.ToString()),
                                 ("@bid", batchId.ToString()), ("@tid", ticketTypeId.ToString()),
                                 ("@sid", (object?)sectorId?.ToString() ?? DBNull.Value),
+                                ("@bname", (object?)batchName ?? DBNull.Value),
                                 ("@extid", externalId), ("@code", code),
                                 ("@me", maxEnt), ("@status", ticketStatus), ("@now", n));
                             inserted++;
@@ -276,9 +285,10 @@ public sealed class MySqlTicketImportService : ITicketImportService
                                 continue;
                             }
                             await ExecTx(conn, tx,
-                                "UPDATE fp_tickets SET maximum_uses=@me,maximum_entries=@me,status=@status,sector_id=COALESCE(@sid,sector_id),updated_at=@now WHERE id=@id;",
+                                "UPDATE fp_tickets SET maximum_uses=@me,maximum_entries=@me,status=@status,sector_id=COALESCE(@sid,sector_id),batch_name=COALESCE(@bname,batch_name),updated_at=@now WHERE id=@id;",
                                 ct, ("@me", maxEnt), ("@status", ticketStatus),
                                 ("@sid", (object?)sectorId?.ToString() ?? DBNull.Value),
+                                ("@bname", (object?)batchName ?? DBNull.Value),
                                 ("@now", DateTime.UtcNow), ("@id", ticketId.ToString()));
                             updated++;
                             rowStatus = "updated";

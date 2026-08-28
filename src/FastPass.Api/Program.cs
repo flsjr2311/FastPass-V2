@@ -3,7 +3,6 @@ using FastPass.Application.Access;
 using FastPass.Application.Auth;
 using FastPass.Application.Catalog;
 using FastPass.Application.Import;
-using FastPass.Application.Staff;
 using FastPass.Domain.Enums;
 using FastPass.Infrastructure.Access;
 using FastPass.Infrastructure.Auth;
@@ -12,7 +11,6 @@ using FastPass.Infrastructure.Database;
 using FastPass.Infrastructure.Import;
 using FastPass.Application.Reports;
 using FastPass.Infrastructure.Reports;
-using FastPass.Infrastructure.Staff;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,7 +23,6 @@ builder.Services.AddSingleton(new FastPassDbConnectionFactory(connectionString))
 builder.Services.AddSingleton<DatabaseProbe>();
 builder.Services.AddSingleton<DatabaseMigrator>();
 builder.Services.AddScoped<IAuthService, MySqlAuthService>();
-builder.Services.AddSingleton<IStaffService, MySqlStaffService>();
 builder.Services.AddSingleton<ICatalogService, MySqlCatalogService>();
 builder.Services.AddSingleton<IAccessPolicyService, MySqlAccessPolicyService>();
 builder.Services.AddSingleton<IAccessMessageService, MySqlAccessMessageService>();
@@ -221,50 +218,6 @@ app.MapDelete("/api/roles/{roleId:guid}", async (Guid roleId, IAuthService auth,
     try { await auth.DeleteRoleAsync(roleId, ct); return Results.NoContent(); }
     catch (AuthForbiddenException ex) { return Results.Json(new { error = ex.Message }, statusCode: 403); }
     catch (AuthConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
-    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
-});
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Staff  (requer staff.manage)
-// ══════════════════════════════════════════════════════════════════════════════
-
-app.MapGet("/api/staff", async (bool? activeOnly, IStaffService svc, HttpContext ctx, CancellationToken ct) =>
-{
-    if (ctx.RequirePermission("staff.gerenciar") is { } e) return e;
-    return Results.Ok(await svc.ListAsync(activeOnly ?? true, ct));
-});
-
-app.MapPost("/api/staff", async (RegisterStaffCommand command, IStaffService svc, HttpContext ctx, CancellationToken ct) =>
-{
-    if (ctx.RequirePermission("staff.gerenciar") is { } e) return e;
-    try { return Results.Created("/api/staff", await svc.RegisterAsync(command, ct)); }
-    catch (StaffConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
-    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
-});
-
-app.MapPut("/api/staff/{staffId:guid}", async (Guid staffId, UpdateStaffCommand command, IStaffService svc, HttpContext ctx, CancellationToken ct) =>
-{
-    if (ctx.RequirePermission("staff.gerenciar") is { } e) return e;
-    try { return Results.Ok(await svc.UpdateAsync(staffId, command, ct)); }
-    catch (StaffConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
-    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
-});
-
-app.MapPost("/api/staff/{staffId:guid}/events/{eventId:guid}/access", async (
-    Guid staffId, Guid eventId, GrantStaffAccessCommand command,
-    IStaffService svc, HttpContext ctx, CancellationToken ct) =>
-{
-    if (ctx.RequirePermission("staff.gerenciar") is { } e) return e;
-    try { return Results.Created($"/api/staff/{staffId}/access", await svc.GrantAccessAsync(staffId, eventId, command, ct)); }
-    catch (StaffConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
-    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
-});
-
-app.MapGet("/api/staff/{staffId:guid}/access", async (
-    Guid staffId, Guid? eventId, IStaffService svc, HttpContext ctx, CancellationToken ct) =>
-{
-    if (ctx.RequirePermission("staff.gerenciar") is { } e) return e;
-    try { return Results.Ok(await svc.ListAccessAsync(staffId, eventId, ct)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
@@ -513,7 +466,6 @@ app.MapDelete("/api/events/{eventId:guid}", async (
         DELETE FROM fp_user_event_scopes    WHERE event_id = @eid;
         DELETE FROM fp_user_events          WHERE event_id = @eid;
         DELETE FROM fp_access_messages      WHERE event_id = @eid;
-        DELETE FROM fp_staff_event_access   WHERE event_id = @eid;
         DELETE FROM fp_ticket_import_rows   WHERE import_id IN (SELECT id FROM fp_ticket_imports WHERE event_id = @eid);
         DELETE FROM fp_ticket_imports       WHERE event_id = @eid;
         DELETE FROM fp_access_attempts      WHERE event_id = @eid;
@@ -773,6 +725,8 @@ app.MapPost("/api/events/{eventId:guid}/ticket-imports", async (
             DefaultStatus: form["defaultStatus"].FirstOrDefault() is { Length: > 0 } ds ? ds : "active",
             ColSector: int.TryParse(form["colSector"], out var csec) ? csec : null,
             DefaultSectorId: Guid.TryParse(form["defaultSectorId"], out var dsid) ? dsid : null,
+            ColBatch: int.TryParse(form["colBatch"], out var cbat) ? cbat : null,
+            DefaultBatchName: form["defaultBatchName"].FirstOrDefault() is { Length: > 0 } dbn ? dbn : null,
             CsvContent: csvContent,
             FileName: file.FileName);
 
@@ -1116,7 +1070,6 @@ app.MapPost("/api/events/{eventId:guid}/admin/delete-data", async (
         await Exec("DELETE FROM fp_ticket_imports WHERE event_id=@eid;");
         await Exec("DELETE FROM fp_access_policies WHERE event_id=@eid;");
         await Exec("DELETE FROM fp_gate_sectors WHERE event_id=@eid;");
-        await Exec("DELETE FROM fp_staff_event_access WHERE event_id=@eid;");
         await Exec("DELETE FROM fp_access_messages WHERE event_id=@eid;");
         await Exec("DELETE FROM fp_tickets WHERE event_id=@eid;");
         await Exec("DELETE FROM fp_ticket_batches WHERE event_id=@eid;");

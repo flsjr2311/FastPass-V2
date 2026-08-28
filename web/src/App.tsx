@@ -4,7 +4,6 @@ import type {
   AttemptPage,
   AttemptSummary,
   ClientView,
-  StaffCredentialView,
   TicketSummaryView,
   AccessMessageView,
   AccessMessageTemplateView,
@@ -771,7 +770,7 @@ function TicketsView({ tickets: _initialTickets, loading: _initialLoading, hasEv
         <button className="primary-button" type="submit" disabled={ticketsLoading}>{ticketsLoading ? 'Buscando...' : 'Buscar'}</button>
         {(searchCode || filterStatus) && <button className="secondary-button" type="button" onClick={() => { setSearchCode(''); setFilterStatus(''); setTimeout(loadTickets, 0); }}>Limpar</button>}
       </form>
-      {ticketsLoading ? <div className="table-loading"><span className="spinner" />Carregando tickets...</div> : tickets.length === 0 ? <EmptyState message="Nenhum ticket encontrado com os filtros informados." /> : <div className="table-scroll"><table><thead><tr><th>Ticket</th><th>Código</th><th>Setor</th><th>Entradas</th><th>Quota</th><th>Status</th><th>Ações</th></tr></thead><tbody>{tickets.slice(0, 200).map((ticket) => <tr key={ticket.id}><td><strong>{ticket.externalId || '—'}</strong><small className="table-id">{ticket.id.slice(0, 8)}</small></td><td><code>{ticket.code}</code></td><td>{ticket.sectorName || '—'}</td><td><div className="usage-cell"><span>{ticket.entriesUsed ?? 0}</span><div className="mini-progress"><i style={{ width: `${Math.min(((ticket.entriesUsed ?? 0) / Math.max(ticket.maximumEntries ?? 1, 1)) * 100, 100)}%` }} /></div></div></td><td>{ticket.maximumEntries ?? 1}</td><td><StatusBadge value={ticket.status} /></td><td><select disabled={statusChanging === ticket.id} value={ticket.status} onChange={(e) => handleStatusChange(ticket.id, e.target.value)}><option value="active">Ativo</option><option value="cancelled">Cancelado</option><option value="revoked">Revogado</option></select></td></tr>)}</tbody></table></div>}
+      {ticketsLoading ? <div className="table-loading"><span className="spinner" />Carregando tickets...</div> : tickets.length === 0 ? <EmptyState message="Nenhum ticket encontrado com os filtros informados." /> : <div className="table-scroll"><table><thead><tr><th>Ticket</th><th>Código</th><th>Setor</th><th>Lote</th><th>Entradas</th><th>Quota</th><th>Status</th><th>Ações</th></tr></thead><tbody>{tickets.slice(0, 200).map((ticket) => <tr key={ticket.id}><td><strong>{ticket.externalId || '—'}</strong><small className="table-id">{ticket.id.slice(0, 8)}</small></td><td><code>{ticket.code}</code></td><td>{ticket.sectorName || '—'}</td><td>{ticket.batchName || '—'}</td><td><div className="usage-cell"><span>{ticket.entriesUsed ?? 0}</span><div className="mini-progress"><i style={{ width: `${Math.min(((ticket.entriesUsed ?? 0) / Math.max(ticket.maximumEntries ?? 1, 1)) * 100, 100)}%` }} /></div></div></td><td>{ticket.maximumEntries ?? 1}</td><td><StatusBadge value={ticket.status} /></td><td><select disabled={statusChanging === ticket.id} value={ticket.status} onChange={(e) => handleStatusChange(ticket.id, e.target.value)}><option value="active">Ativo</option><option value="cancelled">Cancelado</option><option value="revoked">Revogado</option></select></td></tr>)}</tbody></table></div>}
       {tickets.length > 200 && <p className="panel-subtitle" style={{ padding: '8px 16px' }}>Mostrando 200 de {tickets.length} tickets. Use os filtros para refinar.</p>}
     </section>
   </>;
@@ -1238,222 +1237,7 @@ function AuditView({ attempts, loading }: { attempts: AttemptPage | null; loadin
 
 function AttemptTable({ attempts, expanded = false }: { attempts: AttemptPage['data']; expanded?: boolean }) {
   if (attempts.length === 0) return <EmptyState message="Ainda não há tentativas de acesso registradas." />;
-  return <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Credencial</th><th>Portaria / setor</th><th>Setor do ingresso</th><th>Direção</th><th>Decisão</th><th>{expanded ? 'Motivo' : 'Status'}</th></tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.attemptId}><td>{formatDate(attempt.requestedAt || attempt.createdAt, true)}</td><td><strong>{attempt.credentialType === 'StaffBadge' ? attempt.staffName || 'Crachá master' : attempt.ticketExternalId || 'Ingresso'}</strong><small className="table-id">{attempt.credentialCodeMasked}</small></td><td><strong>{attempt.gateName || 'Portaria não informada'}</strong><small>{attempt.sectorName || 'Setor não informado'}</small></td><td>{attempt.ticketSectorName || '—'}</td><td><span className="direction">{attempt.direction === 'Entry' ? '↓ Entrada' : '↑ Saída'}</span></td><td><StatusBadge value={attempt.decision} /></td><td>{expanded ? attempt.reason || '—' : <span className="muted-text">{attempt.status}</span>}</td></tr>)}</tbody></table></div>;
-}
-
-function StaffView({ eventId, gates: _g }: { eventId: string; gates: GateView[] }) {
-  const [staff, setStaff] = useState<StaffCredentialView[]>([]);
-  const [events, setEvents] = useState<EventView[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [editing, setEditing] = useState<StaffCredentialView | null>(null);
-  const [tab, setTab] = useState<'list' | 'form' | 'access'>('list');
-  const [savingId, setSavingId] = useState<string | null>(null);
-
-  // Formulário
-  const [name, setName] = useState('');
-  const [badgeCode, setBadgeCode] = useState('');
-  const [employeeCode, setEmployeeCode] = useState('');
-  const [department, setDepartment] = useState('');
-  const [jobTitle, setJobTitle] = useState('');
-  const [validFrom, setValidFrom] = useState('');
-  const [validUntil, setValidUntil] = useState('');
-  const [active, setActive] = useState(true);
-
-  // Formulário de acesso
-  const [accessStaffId, setAccessStaffId] = useState('');
-  const [accessEventId, setAccessEventId] = useState(eventId);
-  const [accessDirection, setAccessDirection] = useState('Entry');
-
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([api.listStaff(false), api.listEvents()])
-      .then(([s, e]) => { setStaff(s); setEvents(e); })
-      .catch((r: unknown) => setError(r instanceof Error ? r.message : 'Erro'))
-      .finally(() => setLoading(false));
-  }, []);
-
-  function startEdit(s: StaffCredentialView) {
-    setEditing(s); setName(s.name); setBadgeCode(s.badgeCode);
-    setEmployeeCode(s.employeeCode ?? ''); setDepartment(s.department ?? '');
-    setJobTitle(s.jobTitle ?? ''); setActive(s.active);
-    setValidFrom(s.validFrom ? s.validFrom.slice(0, 10) : '');
-    setValidUntil(s.validUntil ? s.validUntil.slice(0, 10) : '');
-    setTab('form');
-  }
-
-  function cancelEdit() {
-    setEditing(null); setName(''); setBadgeCode(''); setEmployeeCode('');
-    setDepartment(''); setJobTitle(''); setValidFrom(''); setValidUntil(''); setActive(true);
-  }
-
-  async function handleSave(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!name.trim() || !badgeCode.trim()) { setError('Nome e código do crachá são obrigatórios.'); return; }
-    setSavingId('form'); setError(null); setNotice(null);
-    try {
-      const payload = {
-        name: name.trim(), badgeCode: badgeCode.trim(),
-        employeeCode: employeeCode.trim() || undefined,
-        department: department.trim() || undefined,
-        jobTitle: jobTitle.trim() || undefined,
-        validFrom: validFrom || undefined, validUntil: validUntil || undefined,
-      };
-      let result: StaffCredentialView;
-      if (editing) {
-        result = await api.updateStaff(editing.staffId, { ...payload, active });
-        setStaff(prev => prev.map(s => s.staffId === result.staffId ? result : s));
-        setNotice(`Colaborador "${result.name}" atualizado.`);
-      } else {
-        result = await api.createStaff(payload);
-        setStaff(prev => [...prev, result]);
-        setNotice(`Colaborador "${result.name}" cadastrado. Código do crachá: ${result.badgeCode}`);
-      }
-      cancelEdit(); setTab('list');
-    } catch (r: unknown) { setError(r instanceof Error ? r.message : 'Erro ao salvar.'); }
-    finally { setSavingId(null); }
-  }
-
-  async function handleToggle(s: StaffCredentialView) {
-    try {
-      const result = await api.updateStaff(s.staffId, {
-        name: s.name, badgeCode: s.badgeCode,
-        employeeCode: s.employeeCode || undefined, active: !s.active,
-      });
-      setStaff(prev => prev.map(x => x.staffId === result.staffId ? result : x));
-      setNotice(`Colaborador ${result.active ? 'ativado' : 'desativado'}.`);
-    } catch (r: unknown) { setError(r instanceof Error ? r.message : 'Erro.'); }
-  }
-
-  async function handleGrantAccess(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!accessStaffId || !accessEventId) { setError('Selecione colaborador e evento.'); return; }
-    setSavingId('access'); setError(null); setNotice(null);
-    try {
-      await api.grantStaffAccess(accessStaffId, accessEventId, { direction: accessDirection, profile: 'operator' });
-      const staffMember = staff.find(s => s.staffId === accessStaffId);
-      setNotice(`Acesso concedido para ${staffMember?.name ?? 'colaborador'}.`);
-    } catch (r: unknown) { setError(r instanceof Error ? r.message : 'Erro ao conceder acesso.'); }
-    finally { setSavingId(null); }
-  }
-
-  const isBlocked = (s: StaffCredentialView) =>
-    s.validUntil && new Date(s.validUntil) < new Date();
-
-  return <>
-    <div className="users-tabs">
-      <button className={tab === 'list' ? 'users-tab active' : 'users-tab'} onClick={() => { setTab('list'); cancelEdit(); }}>
-        Colaboradores <span className="users-tab-count">{staff.length}</span>
-      </button>
-      <button className={tab === 'form' ? 'users-tab active' : 'users-tab'} onClick={() => setTab('form')}>
-        {editing ? `Editar: ${editing.name}` : 'Cadastrar'}
-      </button>
-      <button className={tab === 'access' ? 'users-tab active' : 'users-tab'} onClick={() => setTab('access')}>
-        Conceder acesso
-      </button>
-    </div>
-    {error && <div className="alert-error"><strong>{error}</strong></div>}
-    {notice && <div className="alert-success"><strong>{notice}</strong></div>}
-
-    {tab === 'list' && <>
-      {loading ? <section className="panel full-panel"><div className="table-loading"><span className="spinner" />Carregando...</div></section>
-        : staff.length === 0 ? <section className="panel full-panel"><EmptyState message="Nenhum colaborador cadastrado." /></section>
-        : <section className="panel full-panel">
-            <div className="panel-heading"><div><p className="panel-kicker">COLABORADORES E CRACHÁS</p><h2>{staff.length} cadastrado(s)</h2>
-              <p className="panel-subtitle">O código do crachá é lido pela catraca ou APP para validar o acesso.</p></div>
-              <button className="secondary-button" onClick={() => { cancelEdit(); setTab('form'); }}>+ Novo</button>
-            </div>
-            <div className="table-scroll"><table>
-              <thead><tr><th>Nome</th><th>Cód. crachá / QR</th><th>Matrícula</th><th>Cargo / Depto</th><th>Validade</th><th>Estado</th><th /></tr></thead>
-              <tbody>{staff.map(s => (
-                <tr key={s.staffId} style={{ opacity: s.active ? 1 : 0.55 }}>
-                  <td><strong>{s.name}</strong></td>
-                  <td><code style={{ fontSize: 12, background: '#f0f3ff', padding: '3px 7px', borderRadius: 5, color: '#3b6fde' }}>{s.badgeCode}</code></td>
-                  <td><small>{s.employeeCode || '—'}</small></td>
-                  <td><small>{[s.jobTitle, s.department].filter(Boolean).join(' · ') || '—'}</small></td>
-                  <td><small style={{ color: isBlocked(s) ? '#e66c7d' : '#9aa6b7' }}>
-                    {s.validUntil ? `até ${formatDate(s.validUntil)}` : 'Sem vencimento'}
-                    {isBlocked(s) && ' ⚠ Vencido'}
-                  </small></td>
-                  <td><StatusBadge value={s.active ? 'active' : 'inactive'} /></td>
-                  <td style={{ display: 'flex', gap: 4 }}>
-                    <button className="secondary-button" style={{ fontSize: 9, padding: '4px 8px' }} onClick={() => startEdit(s)}>Editar</button>
-                    <button className="secondary-button" style={{ fontSize: 9, padding: '4px 8px' }} onClick={() => handleToggle(s)}>
-                      {s.active ? 'Desativar' : 'Ativar'}
-                    </button>
-                  </td>
-                </tr>
-              ))}</tbody>
-            </table></div>
-          </section>}
-    </>}
-
-    {tab === 'form' && <section className="panel full-panel">
-      <div className="panel-heading">
-        <div><p className="panel-kicker">{editing ? 'EDITAR' : 'NOVO'} COLABORADOR</p>
-          <h2>{editing ? editing.name : 'Cadastrar colaborador'}</h2>
-          <p className="panel-subtitle">O código do crachá pode ser qualquer string — código impresso, CPF, número gerado. É o que a catraca vai ler.</p>
-        </div>
-        {editing && <button className="secondary-button" onClick={() => { cancelEdit(); setTab('list'); }}>Cancelar edição</button>}
-      </div>
-      <form className="config-form" style={{ padding: '0 24px 24px' }} onSubmit={handleSave}>
-        <div className="form-row form-row-three">
-          <label>Nome completo *<input value={name} onChange={e => setName(e.target.value)} placeholder="Ex.: João Silva" disabled={savingId === 'form'} /></label>
-          <label>
-            Código do crachá / QR *
-            <input value={badgeCode} onChange={e => setBadgeCode(e.target.value)}
-              placeholder="Ex.: 12345678, CPF ou QR impresso" disabled={savingId === 'form'}
-              style={{ fontFamily: 'monospace' }} />
-            <small style={{ color: '#8d99ab', fontSize: 10 }}>Este código é digitado/lido na validação</small>
-          </label>
-          <label>Matrícula / ID externo<input value={employeeCode} onChange={e => setEmployeeCode(e.target.value)} placeholder="Opcional" disabled={savingId === 'form'} /></label>
-        </div>
-        <div className="form-row form-row-three">
-          <label>Cargo<input value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="Ex.: Segurança" disabled={savingId === 'form'} /></label>
-          <label>Departamento<input value={department} onChange={e => setDepartment(e.target.value)} placeholder="Ex.: Equipe de acesso" disabled={savingId === 'form'} /></label>
-          <div className="form-row">
-            <label>Válido de<input type="date" value={validFrom} onChange={e => setValidFrom(e.target.value)} disabled={savingId === 'form'} /></label>
-            <label>Válido até<input type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} disabled={savingId === 'form'} /></label>
-          </div>
-        </div>
-        {editing && <label className="form-checkbox"><input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} disabled={savingId === 'form'} /><span className="checkbox-box">✓</span>Colaborador ativo</label>}
-        <button className="secondary-button form-submit" type="submit" disabled={savingId === 'form'}>
-          {savingId === 'form' ? 'Salvando...' : editing ? 'Salvar alterações' : 'Cadastrar colaborador'}
-        </button>
-      </form>
-    </section>}
-
-    {tab === 'access' && <section className="panel full-panel">
-      <div className="panel-heading"><div><p className="panel-kicker">AUTORIZAÇÃO</p><h2>Conceder acesso ao evento</h2>
-        <p className="panel-subtitle">Vincula o colaborador a um evento, definindo a direção que poderá validar.</p></div></div>
-      <form className="config-form" style={{ padding: '0 24px 24px' }} onSubmit={handleGrantAccess}>
-        <div className="form-row form-row-three">
-          <label>Colaborador *
-            <select value={accessStaffId} onChange={e => setAccessStaffId(e.target.value)} disabled={savingId === 'access'}>
-              <option value="">Selecione</option>
-              {staff.filter(s => s.active).map(s => <option key={s.staffId} value={s.staffId}>{s.name} — {s.badgeCode}</option>)}
-            </select>
-          </label>
-          <label>Evento *
-            <select value={accessEventId} onChange={e => setAccessEventId(e.target.value)} disabled={savingId === 'access'}>
-              <option value="">Selecione</option>
-              {events.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-          </label>
-          <label>Direção
-            <select value={accessDirection} onChange={e => setAccessDirection(e.target.value)} disabled={savingId === 'access'}>
-              <option value="Entry">Entrada</option>
-              <option value="Exit">Saída</option>
-            </select>
-          </label>
-        </div>
-        <button className="secondary-button form-submit" type="submit" disabled={savingId === 'access' || !accessStaffId || !accessEventId}>
-          {savingId === 'access' ? 'Salvando...' : 'Conceder acesso'}
-        </button>
-      </form>
-    </section>}
-  </>;
+  return <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Credencial</th><th>Portaria / setor</th><th>Setor do ingresso</th><th>Direção</th><th>Decisão</th><th>{expanded ? 'Motivo' : 'Status'}</th></tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.attemptId}><td>{formatDate(attempt.requestedAt || attempt.createdAt, true)}</td><td><strong>{attempt.credentialType === 'StaffBadge' ? attempt.staffName || 'Crachá de usuário' : attempt.ticketExternalId || 'Ingresso'}</strong><small className="table-id">{attempt.credentialCodeMasked}</small></td><td><strong>{attempt.gateName || 'Portaria não informada'}</strong><small>{attempt.sectorName || 'Setor não informado'}</small></td><td>{attempt.ticketSectorName || '—'}</td><td><span className="direction">{attempt.direction === 'Entry' ? '↓ Entrada' : '↑ Saída'}</span></td><td><StatusBadge value={attempt.decision} /></td><td>{expanded ? attempt.reason || '—' : <span className="muted-text">{attempt.status}</span>}</td></tr>)}</tbody></table></div>;
 }
 
 function ClientsView() {
@@ -1795,10 +1579,6 @@ function UsersView() {
   const [newEventIds, setNewEventIds] = useState<string[]>([]);
   const [newGateIds, setNewGateIds] = useState<string[]>([]);
   const [savingUser, setSavingUser] = useState(false);
-  // Colaborador vinculado ao usuário
-  const [alsoStaff, setAlsoStaff] = useState(false);
-  const [staffBadgeCode, setStaffBadgeCode] = useState('');
-  const [staffEmployeeCode, setStaffEmployeeCode] = useState('');
   // Acesso físico no usuário
   const [physicalAccess, setPhysicalAccess] = useState(false);
   const [badgeCode, setBadgeCode] = useState('');
@@ -1845,7 +1625,6 @@ function UsersView() {
     setEditingUser(null);
     setNewUserName(''); setNewDisplayName(''); setNewPassword('');
     setNewRoleIds([]); setNewEventScope('Todos'); setNewEventIds([]); setNewGateIds([]);
-    setAlsoStaff(false); setStaffBadgeCode(''); setStaffEmployeeCode('');
     setPhysicalAccess(false); setBadgeCode('');
   }
 
@@ -1944,7 +1723,6 @@ function UsersView() {
     'Catálogo': ['cliente.gerenciar', 'evento.criar', 'evento.editar', 'evento.excluir', 'portaria.gerenciar', 'setor.gerenciar', 'relacao.gerenciar', 'dispositivo.gerenciar'],
     'Ingressos': ['ticket.consultar', 'ticket.status', 'ticket.importar', 'ticket.dados.excluir'],
     'Mensagens': ['mensagem.gerenciar'],
-    'Staff': ['staff.gerenciar'],
     'Administração': ['usuario.gerenciar', 'perfil.gerenciar', 'perfil.permissoes.gerenciar', 'sessao.revogar', 'escopo.global'],
   };
 
@@ -2058,9 +1836,9 @@ function UsersView() {
                       <small style={{ color: '#8d99ab', fontSize: 10 }}>Deve ser único em todo o sistema</small>
                     </label>
                     <label style={{ color: '#20ba83', fontWeight: 700, fontSize: 10, alignSelf: 'end', paddingBottom: 6 }}>
-                      {editingUser?.staffMemberId
-                        ? '✓ Crachá vinculado — será atualizado'
-                        : '+ Novo crachá será criado'}
+                      {editingUser?.accessBadgeCode
+                        ? '✓ Crachá atualizado'
+                        : '+ Novo crachá'}
                     </label>
                   </div>
                 )}

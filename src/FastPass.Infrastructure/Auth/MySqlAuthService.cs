@@ -44,7 +44,7 @@ public sealed class MySqlAuthService : IAuthService
                 Permissions.GatesManage, Permissions.SectorsManage, Permissions.MatrixManage,
                 Permissions.DevicesManage,
                 Permissions.TicketsView, Permissions.TicketsStatus, Permissions.TicketsImport,
-                Permissions.MessagesManage, Permissions.StaffManage,
+                Permissions.MessagesManage,
             ]),
 
         (DefaultRoles.OperadorPortaria,
@@ -245,31 +245,24 @@ public sealed class MySqlAuthService : IAuthService
                 ct, ("@un", command.UserName.Trim())))
                 throw new AuthConflictException("Já existe um usuário com esse nome.");
 
-            // Valida unicidade do badge code
+            // Valida unicidade do badge code entre usuários (crachá de acesso físico)
             if (command.PhysicalAccessEnabled && !string.IsNullOrWhiteSpace(command.AccessBadgeCode))
             {
-                if (await Exists(conn, tx, "SELECT COUNT(*) FROM fp_staff_credentials WHERE code=@code AND active=1;",
+                if (await Exists(conn, tx, "SELECT COUNT(*) FROM fp_users WHERE access_badge_code=@code;",
                     ct, ("@code", command.AccessBadgeCode.Trim())))
-                    throw new AuthConflictException($"O código de acesso '{command.AccessBadgeCode}' já está em uso por outro colaborador.");
+                    throw new AuthConflictException($"O código de acesso '{command.AccessBadgeCode}' já está em uso por outro usuário.");
             }
-
-            // Cria staff_member se acesso físico habilitado
-            string? staffMemberId = null;
-            if (command.PhysicalAccessEnabled && !string.IsNullOrWhiteSpace(command.AccessBadgeCode))
-                staffMemberId = await UpsertStaffMemberAsync(conn, tx, null, id, command.DisplayName.Trim(),
-                    command.AccessBadgeCode.Trim(), now, ct);
 
             await Exec(conn, tx, """
                 INSERT INTO fp_users (id,user_name,display_name,password_hash,active,event_scope_mode,
-                    physical_access_enabled,access_badge_code,staff_member_id,created_at,updated_at)
-                VALUES (@id,@un,@dn,@ph,1,@esm,@pa,@bc,@smid,@now,@now);
+                    physical_access_enabled,access_badge_code,created_at,updated_at)
+                VALUES (@id,@un,@dn,@ph,1,@esm,@pa,@bc,@now,@now);
                 """, ct,
                 ("@id", id.ToString()), ("@un", command.UserName.Trim()), ("@dn", command.DisplayName.Trim()),
                 ("@ph", HashPassword(command.Password)),
                 ("@esm", command.EventScope.ToString().ToUpperInvariant()),
                 ("@pa", command.PhysicalAccessEnabled ? 1 : 0),
                 ("@bc", (object?)command.AccessBadgeCode?.Trim() ?? DBNull.Value),
-                ("@smid", (object?)staffMemberId ?? DBNull.Value),
                 ("@now", now));
 
             await SaveUserLinksAsync(conn, tx, id, command.RoleIds, command.EventIds, command.GateIds,
@@ -299,61 +292,41 @@ public sealed class MySqlAuthService : IAuthService
                 ct, ("@id", userId.ToString())))
                 throw new ArgumentException("Usuário não encontrado.");
 
-            // Busca staff_member_id atual
+            // Busca o badge code atual do usuário
             await using var curCmd = conn.CreateCommand();
             curCmd.Transaction = tx;
-            curCmd.CommandText = "SELECT staff_member_id, access_badge_code FROM fp_users WHERE id=@id LIMIT 1;";
+            curCmd.CommandText = "SELECT access_badge_code FROM fp_users WHERE id=@id LIMIT 1;";
             curCmd.Parameters.AddWithValue("@id", userId.ToString());
             await using var curR = await curCmd.ExecuteReaderAsync(ct);
-            string? existingStaffId = null; string? existingBadge = null;
+            string? existingBadge = null;
             if (await curR.ReadAsync(ct))
             {
-                existingStaffId = curR.IsDBNull(0) ? null : curR.GetString(0);
-                existingBadge   = curR.IsDBNull(1) ? null : curR.GetString(1);
+                existingBadge = curR.IsDBNull(0) ? null : curR.GetValue(0).ToString();
             }
             await curR.CloseAsync();
 
-            // Valida unicidade do badge code (exceto o próprio)
+            // Valida unicidade do badge code entre usuários (exceto o próprio)
             if (command.PhysicalAccessEnabled && !string.IsNullOrWhiteSpace(command.AccessBadgeCode)
                 && command.AccessBadgeCode.Trim() != existingBadge)
             {
-                if (await Exists(conn, tx, "SELECT COUNT(*) FROM fp_staff_credentials WHERE code=@code AND active=1;",
-                    ct, ("@code", command.AccessBadgeCode.Trim())))
+                if (await Exists(conn, tx, "SELECT COUNT(*) FROM fp_users WHERE access_badge_code=@code AND id<>@id;",
+                    ct, ("@code", command.AccessBadgeCode.Trim()), ("@id", userId.ToString())))
                     throw new AuthConflictException($"O código de acesso '{command.AccessBadgeCode}' já está em uso.");
             }
 
             var now = DateTime.UtcNow;
-            string? staffMemberId = existingStaffId;
-
-            if (command.PhysicalAccessEnabled && !string.IsNullOrWhiteSpace(command.AccessBadgeCode))
-            {
-                // Cria ou atualiza o staff member
-                staffMemberId = await UpsertStaffMemberAsync(conn, tx, existingStaffId, userId,
-                    command.DisplayName.Trim(), command.AccessBadgeCode.Trim(), now, ct);
-            }
-            else if (!command.PhysicalAccessEnabled && existingStaffId != null)
-            {
-                // Desativa a credential sem remover o histórico
-                await Exec(conn, tx,
-                    "UPDATE fp_staff_credentials SET active=0,updated_at=@now WHERE staff_member_id=@sid;",
-                    ct, ("@now", now), ("@sid", existingStaffId));
-                await Exec(conn, tx,
-                    "UPDATE fp_staff_members SET active=0,updated_at=@now WHERE id=@sid;",
-                    ct, ("@now", now), ("@sid", existingStaffId));
-            }
 
             await Exec(conn, tx, """
                 UPDATE fp_users
                 SET display_name=@dn, active=@a, event_scope_mode=@esm,
                     physical_access_enabled=@pa, access_badge_code=@bc,
-                    staff_member_id=@smid, updated_at=@now
+                    updated_at=@now
                 WHERE id=@id;
                 """, ct,
                 ("@dn", command.DisplayName.Trim()), ("@a", command.Active ? 1 : 0),
                 ("@esm", command.EventScope.ToString().ToUpperInvariant()),
                 ("@pa", command.PhysicalAccessEnabled ? 1 : 0),
                 ("@bc", (object?)command.AccessBadgeCode?.Trim() ?? DBNull.Value),
-                ("@smid", (object?)staffMemberId ?? DBNull.Value),
                 ("@now", now), ("@id", userId.ToString()));
 
             if (!command.Active)
@@ -727,75 +700,12 @@ public sealed class MySqlAuthService : IAuthService
         return result;
     }
 
-    /// <summary>Cria ou atualiza fp_staff_members + fp_staff_credentials vinculados a um usuário do sistema.</summary>
-    private static async Task<string> UpsertStaffMemberAsync(
-        MySqlConnection conn, MySqlTransaction tx,
-        string? existingStaffId, Guid userId, string displayName, string badgeCode,
-        DateTime now, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(existingStaffId))
-        {
-            // Criar novo staff_member
-            var staffId = Guid.NewGuid().ToString();
-            await using var sm = conn.CreateCommand();
-            sm.Transaction = tx;
-            sm.CommandText = """
-                INSERT INTO fp_staff_members (id, employee_code, name, department, job_title, active, created_at, updated_at)
-                VALUES (@id, NULL, @name, 'Sistema', 'Operador', 1, @now, @now);
-                """;
-            sm.Parameters.AddWithValue("@id", staffId);
-            sm.Parameters.AddWithValue("@name", displayName);
-            sm.Parameters.AddWithValue("@now", now);
-            await sm.ExecuteNonQueryAsync(ct);
-
-            // Criar credential
-            await using var sc = conn.CreateCommand();
-            sc.Transaction = tx;
-            sc.CommandText = """
-                INSERT INTO fp_staff_credentials (id, staff_member_id, code, credential_type, valid_from, valid_until, active, created_at, updated_at)
-                VALUES (@id, @smid, @code, 'BadgeCode', NULL, NULL, 1, @now, @now);
-                """;
-            sc.Parameters.AddWithValue("@id", Guid.NewGuid().ToString());
-            sc.Parameters.AddWithValue("@smid", staffId);
-            sc.Parameters.AddWithValue("@code", badgeCode);
-            sc.Parameters.AddWithValue("@now", now);
-            await sc.ExecuteNonQueryAsync(ct);
-            return staffId;
-        }
-        else
-        {
-            // Atualizar nome
-            await using var sm = conn.CreateCommand();
-            sm.Transaction = tx;
-            sm.CommandText = "UPDATE fp_staff_members SET name=@name, active=1, updated_at=@now WHERE id=@id;";
-            sm.Parameters.AddWithValue("@name", displayName);
-            sm.Parameters.AddWithValue("@now", now);
-            sm.Parameters.AddWithValue("@id", existingStaffId);
-            await sm.ExecuteNonQueryAsync(ct);
-
-            // Atualizar ou criar credential com novo código
-            await using var sc = conn.CreateCommand();
-            sc.Transaction = tx;
-            sc.CommandText = """
-                INSERT INTO fp_staff_credentials (id, staff_member_id, code, credential_type, valid_from, valid_until, active, created_at, updated_at)
-                VALUES (@id, @smid, @code, 'BadgeCode', NULL, NULL, 1, @now, @now)
-                ON DUPLICATE KEY UPDATE code=@code, active=1, updated_at=@now;
-                """;
-            sc.Parameters.AddWithValue("@id", Guid.NewGuid().ToString());
-            sc.Parameters.AddWithValue("@smid", existingStaffId);
-            sc.Parameters.AddWithValue("@code", badgeCode);
-            sc.Parameters.AddWithValue("@now", now);
-            await sc.ExecuteNonQueryAsync(ct);
-            return existingStaffId;
-        }
-    }
-
     private static async Task<UserView?> GetUserViewAsync(MySqlConnection conn, Guid userId, CancellationToken ct)
     {
         await using var c = conn.CreateCommand();
         c.CommandText = """
             SELECT id,user_name,display_name,active,event_scope_mode,last_login_at,blocked_until,
-                   physical_access_enabled,access_badge_code,staff_member_id
+                   physical_access_enabled,access_badge_code
             FROM fp_users WHERE id=@id LIMIT 1;
             """;
         c.Parameters.AddWithValue("@id", userId.ToString());
@@ -809,7 +719,7 @@ public sealed class MySqlAuthService : IAuthService
         DateTimeOffset? blocked = r.IsDBNull(6) ? null : new(DateTime.SpecifyKind(r.GetDateTime(6), DateTimeKind.Utc));
         var physAccess = !r.IsDBNull(7) && Convert.ToBoolean(r.GetValue(7));
         var badgeCode = r.IsDBNull(8) ? null : r.GetValue(8).ToString();
-        var staffMemberId = r.IsDBNull(9) ? null : r.GetValue(9).ToString();
+        string? staffMemberId = null;
         await r.CloseAsync();
 
         var roles = await GetUserRolesAsync(conn, id, ct);

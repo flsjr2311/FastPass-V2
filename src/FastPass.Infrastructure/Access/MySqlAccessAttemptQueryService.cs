@@ -10,8 +10,7 @@ public sealed class MySqlAccessAttemptQueryService : IAccessAttemptQueryService
     private const string FromSql = """
         FROM fp_access_attempts a
         LEFT JOIN fp_tickets t ON t.id = a.ticket_id
-        LEFT JOIN fp_staff_credentials c ON c.id = a.staff_credential_id
-        LEFT JOIN fp_staff_members s ON s.id = c.staff_member_id
+        LEFT JOIN fp_users s ON s.id = a.staff_credential_id
         LEFT JOIN fp_gates g ON g.id = a.gate_id
         LEFT JOIN fp_sectors sec ON sec.id = a.sector_id
         LEFT JOIN fp_sectors tsec ON tsec.id = t.sector_id
@@ -43,9 +42,9 @@ public sealed class MySqlAccessAttemptQueryService : IAccessAttemptQueryService
         await using var dataCommand = CreateCommand(
             connection,
             $"""
-            SELECT a.id, a.event_id, a.ticket_id, a.staff_credential_id, c.staff_member_id,
+            SELECT a.id, a.event_id, a.ticket_id, a.staff_credential_id, a.staff_credential_id,
                    a.gate_id, a.sector_id, a.device_id, a.credential_type, a.direction, a.decision,
-                   a.reason, a.status, a.credential_code, t.external_id, s.name,
+                   a.reason, a.status, a.credential_code, t.external_id, s.display_name,
                    g.name, sec.name, d.name, a.requested_at, a.created_at, tsec.name
             {FromSql}
             WHERE {WhereSql}

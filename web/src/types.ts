@@ -84,6 +84,9 @@ export interface TicketView {
   status: string;
   metadataJson?: string | null;
   createdAt: string;
+  sectorId?: string | null;
+  sectorName?: string | null;
+  batchName?: string | null;
 }
 
 export interface AccessMessageView {
@@ -347,34 +350,6 @@ export interface ClientView {
   notes?: string | null;
   eventCount: number;
   createdAt: string;
-}
-
-// ── Staff / Crachás ───────────────────────────────────────────────────────────
-export interface StaffCredentialView {
-  staffId: string;
-  credentialId: string;
-  employeeCode: string;
-  name: string;
-  department?: string | null;
-  jobTitle?: string | null;
-  badgeCode: string;
-  credentialType: string;
-  active: boolean;
-  validFrom?: string | null;
-  validUntil?: string | null;
-}
-
-export interface StaffAccessView {
-  id: string;
-  staffId: string;
-  eventId: string;
-  gateId?: string | null;
-  sectorId?: string | null;
-  profile: string;
-  direction: string;
-  active: boolean;
-  validFrom?: string | null;
-  validUntil?: string | null;
 }
 
 // ── Resumo de tickets por evento ──────────────────────────────────────────────

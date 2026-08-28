@@ -161,8 +161,8 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             resolvedMessage: resolvedMessage) with
         {
             StaffCredentialId = credential?.CredentialId,
-            StaffMemberId = credential?.StaffMemberId,
-            StaffName = credential?.StaffName
+            StaffMemberId = credential?.UserId,
+            StaffName = credential?.UserName
         };
 
         try
@@ -228,28 +228,20 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         string? reason = null;
         var approved = false;
 
-        if (!credential.Active || !credential.StaffActive)
+        if (!credential.Active || !credential.PhysicalAccessEnabled)
         {
-            reason = "Crachá ou funcionário inativo.";
-        }
-        else if (credential.ValidFrom.HasValue && credential.ValidFrom.Value > now)
-        {
-            reason = "Crachá ainda não está válido.";
-        }
-        else if (credential.ValidUntil.HasValue && credential.ValidUntil.Value < now)
-        {
-            reason = "Crachá expirado.";
+            reason = "Crachá de usuário inativo ou sem acesso físico habilitado.";
         }
         else if (!await HasAuthorizationAsync(
                      connection,
                      transaction,
                      command,
-                     credential.StaffMemberId,
+                     credential.UserId,
                      direction,
                      now,
                      cancellationToken))
         {
-            reason = "Crachá sem autorização para este evento, portaria, setor ou direção.";
+            reason = "Crachá sem autorização para este evento, portaria ou setor.";
         }
         else
         {
@@ -665,6 +657,9 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         return Convert.ToInt32(await sql.ExecuteScalarAsync(cancellationToken)) > 0;
     }
 
+    // Lê o crachá de ACESSO FÍSICO de um USUÁRIO (não mais staff).
+    // Um código é considerado crachá de usuário se casar com fp_users.access_badge_code
+    // de um usuário ativo com physical_access_enabled = 1.
     private static async Task<CredentialData?> ReadCredentialAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
@@ -674,10 +669,10 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         await using var sql = connection.CreateCommand();
         sql.Transaction = transaction;
         sql.CommandText = """
-            SELECT c.id, s.id, s.name, c.active, s.active, c.valid_from, c.valid_until
-            FROM fp_staff_credentials c
-            INNER JOIN fp_staff_members s ON s.id = c.staff_member_id
-            WHERE c.code = @code
+            SELECT id, display_name, active, physical_access_enabled
+            FROM fp_users
+            WHERE access_badge_code = @code
+              AND physical_access_enabled = 1
             LIMIT 1;
             """;
         sql.Parameters.AddWithValue("@code", code);
@@ -688,45 +683,52 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             return null;
         }
 
+        var userId = ReadGuid(reader, 0);
         return new CredentialData(
-            ReadGuid(reader, 0),
-            ReadGuid(reader, 1),
-            reader.GetString(2),
-            Convert.ToBoolean(reader.GetValue(3)),
-            Convert.ToBoolean(reader.GetValue(4)),
-            ReadNullableDateTime(reader, 5),
-            ReadNullableDateTime(reader, 6));
+            userId,
+            userId,
+            reader.GetString(1),
+            Convert.ToBoolean(reader.GetValue(2)),
+            Convert.ToBoolean(reader.GetValue(3)));
     }
 
+    // Autorização do crachá de usuário: verifica o escopo de eventos/portarias do usuário.
+    // Usuário com escopo global (sem linhas em fp_user_event_scopes com restrição) ou
+    // com escopo que inclui o evento/portaria é autorizado.
     private static async Task<bool> HasAuthorizationAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
         ValidateAccessCommand command,
-        Guid staffMemberId,
+        Guid userId,
         AccessDirection direction,
         DateTime now,
         CancellationToken cancellationToken)
     {
+        // Se o usuário não tem NENHUM escopo específico cadastrado, considera acesso global.
+        await using var scopeCount = connection.CreateCommand();
+        scopeCount.Transaction = transaction;
+        scopeCount.CommandText = "SELECT COUNT(*) FROM fp_user_event_scopes WHERE user_id = @uid;";
+        scopeCount.Parameters.AddWithValue("@uid", userId.ToString());
+        var totalScopes = Convert.ToInt32(await scopeCount.ExecuteScalarAsync(cancellationToken));
+        if (totalScopes == 0)
+        {
+            return true; // sem restrição de escopo → crachá válido em qualquer portaria
+        }
+
         await using var sql = connection.CreateCommand();
         sql.Transaction = transaction;
         sql.CommandText = """
             SELECT COUNT(*)
-            FROM fp_staff_event_access
-            WHERE event_id = @event_id
-              AND staff_member_id = @staff_member_id
-              AND active = 1
+            FROM fp_user_event_scopes
+            WHERE user_id = @uid
+              AND event_id = @event_id
               AND (gate_id IS NULL OR gate_id = @gate_id)
-              AND (sector_id IS NULL OR (@sector_id IS NOT NULL AND sector_id = @sector_id))
-              AND direction = @direction
-              AND (valid_from IS NULL OR valid_from <= @now)
-              AND (valid_until IS NULL OR valid_until >= @now);
+              AND (sector_id IS NULL OR (@sector_id IS NOT NULL AND sector_id = @sector_id));
             """;
+        sql.Parameters.AddWithValue("@uid", userId.ToString());
         sql.Parameters.AddWithValue("@event_id", command.EventId.ToString());
-        sql.Parameters.AddWithValue("@staff_member_id", staffMemberId.ToString());
         sql.Parameters.AddWithValue("@gate_id", command.GateId.ToString());
         sql.Parameters.AddWithValue("@sector_id", (object?)command.SectorId?.ToString() ?? DBNull.Value);
-        sql.Parameters.AddWithValue("@direction", direction.ToString());
-        sql.Parameters.AddWithValue("@now", now);
         return Convert.ToInt32(await sql.ExecuteScalarAsync(cancellationToken)) > 0;
     }
 
@@ -811,12 +813,11 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         sql.Transaction = transaction;
         sql.CommandText = """
             SELECT a.id, a.decision, a.reason, a.credential_type, a.staff_credential_id,
-                   s.id, s.name, a.channel, a.direction, a.ticket_id,
+                   u.id, u.display_name, a.channel, a.direction, a.ticket_id,
                    a.entries_after, a.people_inside_after, a.arm_action, a.pictogram,
                    t.maximum_entries, a.reason_code, a.message, a.message_presentation_json
             FROM fp_access_attempts a
-            LEFT JOIN fp_staff_credentials c ON c.id = a.staff_credential_id
-            LEFT JOIN fp_staff_members s ON s.id = c.staff_member_id
+            LEFT JOIN fp_users u ON u.id = a.staff_credential_id
             LEFT JOIN fp_tickets t ON t.id = a.ticket_id
             WHERE a.idempotency_key = @idempotency_key
             LIMIT 1;
@@ -980,12 +981,10 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
 
     private sealed record CredentialData(
         Guid CredentialId,
-        Guid StaffMemberId,
-        string StaffName,
+        Guid UserId,
+        string UserName,
         bool Active,
-        bool StaffActive,
-        DateTime? ValidFrom,
-        DateTime? ValidUntil);
+        bool PhysicalAccessEnabled);
 
     private sealed record DecisionData(
         bool Approved,

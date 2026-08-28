@@ -191,7 +191,8 @@ public sealed record TicketView(
     int? EntriesUsed = null,
     int? PeopleInside = null,
     Guid? SectorId = null,
-    string? SectorName = null);
+    string? SectorName = null,
+    string? BatchName = null);
 
 public sealed class CatalogConflictException : Exception
 {

@@ -31,8 +31,6 @@ public static class Permissions
     public const string TicketsDelete    = "ticket.dados.excluir";
     // Mensagens
     public const string MessagesManage   = "mensagem.gerenciar";
-    // Colaboradores (staff)
-    public const string StaffManage      = "staff.gerenciar";
     // Administração
     public const string UsersManage      = "usuario.gerenciar";
     public const string RolesManage      = "perfil.gerenciar";
@@ -68,7 +66,6 @@ public static class Permissions
             [TicketsImport]   = "Importar ingressos via CSV",
             [TicketsDelete]   = "Excluir dados de ingressos de evento",
             [MessagesManage]  = "Configurar mensagens de validação",
-            [StaffManage]     = "Gerenciar colaboradores e crachás",
             [UsersManage]     = "Gerenciar usuários do sistema",
             [RolesManage]     = "Gerenciar perfis",
             [RolesPermManage] = "Atribuir permissões a perfis",

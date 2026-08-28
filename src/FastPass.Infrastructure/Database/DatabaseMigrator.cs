@@ -42,6 +42,128 @@ public sealed class DatabaseMigrator
 
             await MarkAsAppliedAsync(connection, migration.Version, cancellationToken);
         }
+
+        await BackfillReadableCodesAsync(connection, cancellationToken);
+    }
+
+    /// <summary>
+    /// Popula os códigos legíveis (code/code_num) para registros que ainda estão NULL.
+    /// - fp_events.code: sequencial global por ordem de criação
+    /// - fp_gates.code_num / fp_sectors.code_num: sequencial por evento
+    /// Idempotente: só atualiza linhas com código NULL.
+    /// </summary>
+    private static async Task BackfillReadableCodesAsync(
+        MySqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Eventos — sequencial global (linha a linha, sem variável de sessão)
+            await BackfillEventsAsync(connection, cancellationToken);
+
+            // Portarias — sequencial por evento (via fp_event_gates)
+            await BackfillPerEventAsync(connection, "fp_gates", "code_num",
+                """
+                SELECT g.id, eg.event_id
+                FROM fp_gates g
+                INNER JOIN fp_event_gates eg ON eg.gate_id = g.id
+                WHERE g.code_num IS NULL
+                ORDER BY eg.event_id, g.created_at, g.id;
+                """,
+                cancellationToken);
+
+            // Setores — sequencial por evento
+            await BackfillPerEventAsync(connection, "fp_sectors", "code_num",
+                """
+                SELECT id, event_id
+                FROM fp_sectors
+                WHERE code_num IS NULL
+                ORDER BY event_id, created_at, id;
+                """,
+                cancellationToken);
+        }
+        catch (MySqlException)
+        {
+            // Coluna inexistente ou schema antigo — ignora.
+        }
+    }
+
+    private static async Task BackfillEventsAsync(
+        MySqlConnection connection, CancellationToken cancellationToken)
+    {
+        var pending = new List<string>();
+        await using (var read = connection.CreateCommand())
+        {
+            read.CommandText = "SELECT id FROM fp_events WHERE code IS NULL ORDER BY created_at, id;";
+            await using var reader = await read.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                pending.Add(reader.GetValue(0).ToString()!);
+        }
+        if (pending.Count == 0) return;
+
+        int current;
+        await using (var maxCmd = connection.CreateCommand())
+        {
+            maxCmd.CommandText = "SELECT COALESCE(MAX(code),0) FROM fp_events;";
+            current = Convert.ToInt32(await maxCmd.ExecuteScalarAsync(cancellationToken));
+        }
+
+        foreach (var id in pending)
+        {
+            current++;
+            await using var upd = connection.CreateCommand();
+            upd.CommandText = "UPDATE fp_events SET code = @n WHERE id = @id;";
+            upd.Parameters.AddWithValue("@n", current);
+            upd.Parameters.AddWithValue("@id", id);
+            await upd.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Popula uma coluna sequencial por evento: para cada evento, numera os registros
+    /// a partir de (máximo atual daquele evento + 1).
+    /// </summary>
+    private static async Task BackfillPerEventAsync(
+        MySqlConnection connection,
+        string table,
+        string column,
+        string selectSql,
+        CancellationToken cancellationToken)
+    {
+        var pending = new List<(string Id, string EventId)>();
+        await using (var read = connection.CreateCommand())
+        {
+            read.CommandText = selectSql;
+            await using var reader = await read.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                pending.Add((reader.GetValue(0).ToString()!, reader.GetValue(1).ToString()!));
+            }
+        }
+
+        if (pending.Count == 0) return;
+
+        var counters = new Dictionary<string, int>();
+        foreach (var (id, eventId) in pending)
+        {
+            if (!counters.TryGetValue(eventId, out var current))
+            {
+                await using var maxCmd = connection.CreateCommand();
+                maxCmd.CommandText = table == "fp_gates"
+                    ? $"SELECT COALESCE(MAX({column}),0) FROM fp_gates g INNER JOIN fp_event_gates eg ON eg.gate_id = g.id WHERE eg.event_id = @eid;"
+                    : $"SELECT COALESCE(MAX({column}),0) FROM {table} WHERE event_id = @eid;";
+                maxCmd.Parameters.AddWithValue("@eid", eventId);
+                current = Convert.ToInt32(await maxCmd.ExecuteScalarAsync(cancellationToken));
+            }
+            current++;
+            counters[eventId] = current;
+
+            await using var upd = connection.CreateCommand();
+            upd.CommandText = $"UPDATE {table} SET {column} = @n WHERE id = @id;";
+            upd.Parameters.AddWithValue("@n", current);
+            upd.Parameters.AddWithValue("@id", id);
+            await upd.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private static IEnumerable<(string Version, string ResourceName)> GetMigrations()
@@ -111,6 +233,7 @@ public sealed class DatabaseMigrator
         {
             1060 => upper.StartsWith("ALTER TABLE", StringComparison.Ordinal),  // Duplicate column
             1061 => upper.StartsWith("ALTER TABLE", StringComparison.Ordinal),  // Duplicate key name
+            1091 => upper.StartsWith("ALTER TABLE", StringComparison.Ordinal),  // Can't DROP; check column/key/FK exists
             1050 => upper.StartsWith("CREATE TABLE", StringComparison.Ordinal), // Table already exists
             _ => false
         };

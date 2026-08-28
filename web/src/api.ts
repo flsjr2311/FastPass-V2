@@ -8,8 +8,6 @@
   RoleView,
   PermissionView,
   ClientView,
-  StaffCredentialView,
-  StaffAccessView,
   TicketSummaryView,
   AttemptPage,
   AttemptSummary,
@@ -132,16 +130,6 @@ export const api = {
     request<void>(`/api/events/${eventId}/gates/${gateId}`, { method: 'DELETE' }),
   removeSector: (eventId: string, sectorId: string) =>
     request<void>(`/api/events/${eventId}/sectors/${sectorId}`, { method: 'DELETE' }),
-  // ── Staff / Crachás ───────────────────────────────────────────────────────
-  listStaff: (activeOnly = true) => request<StaffCredentialView[]>(`/api/staff?activeOnly=${activeOnly}`),
-  createStaff: (payload: { name: string; badgeCode: string; employeeCode?: string; department?: string; jobTitle?: string; validFrom?: string; validUntil?: string }) =>
-    request<StaffCredentialView>('/api/staff', { method: 'POST', body: JSON.stringify(payload) }),
-  updateStaff: (staffId: string, payload: { name: string; badgeCode: string; employeeCode?: string; department?: string; jobTitle?: string; validFrom?: string; validUntil?: string; active: boolean }) =>
-    request<StaffCredentialView>(`/api/staff/${staffId}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  grantStaffAccess: (staffId: string, eventId: string, payload: { gateId?: string; sectorId?: string; direction: string; profile: string }) =>
-    request<StaffAccessView>(`/api/staff/${staffId}/events/${eventId}/access`, { method: 'POST', body: JSON.stringify(payload) }),
-  listStaffAccess: (staffId: string, eventId?: string) =>
-    request<StaffAccessView[]>(`/api/staff/${staffId}/access${eventId ? `?eventId=${eventId}` : ''}`),
 
   listTickets: (eventId: string, filters?: { code?: string; status?: string; externalId?: string }) => {
     const params = new URLSearchParams();

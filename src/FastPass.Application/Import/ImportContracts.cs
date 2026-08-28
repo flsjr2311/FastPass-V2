@@ -40,6 +40,10 @@ public sealed record StartImportCommand(
     int? ColSector = null,
     /// <summary>Setor aplicado a todas as linhas quando não houver ColSector (ou como padrão para linhas sem valor na coluna).</summary>
     Guid? DefaultSectorId = null,
+    /// <summary>Coluna opcional com o NOME do lote de cada linha (texto livre vindo da planilha da empresa).</summary>
+    int? ColBatch = null,
+    /// <summary>Lote aplicado a todas as linhas quando não houver ColBatch.</summary>
+    string? DefaultBatchName = null,
     /// <summary>Conteúdo do arquivo já lido como texto (UTF-8 ou latin-1 normalizado).</summary>
     string CsvContent = "",
     string FileName = "");
