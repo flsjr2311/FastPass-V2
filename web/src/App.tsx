@@ -410,7 +410,6 @@ function Dashboard({ selectedEvent, onOpen }: { selectedEvent: EventView | null;
           ))}
         </select>
         <button className="secondary-button" onClick={toggleKiosk}>{kiosk ? '✕ Sair do kiosk' : '⛶ Kiosk'}</button>
-        <StatusBadge value={selectedEvent.status} />
       </div>
     </section>
 
