@@ -303,12 +303,20 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             {
                 direction = AccessDirection.Entry;
             }
+            else if (ticket.PeopleInside > 0)
+            {
+                // Ticket está "dentro". Só tratamos como SAÍDA se a portaria realmente
+                // validar saída para o setor do ticket (existe regra Exit na matriz).
+                // Caso contrário, é uma releitura numa portaria de entrada → tratamos como
+                // entrada, o que resultará corretamente em "Ingresso já utilizado".
+                var hasExitRule = ticket.SectorId.HasValue && await HasActiveGateSectorAsync(
+                    connection, transaction, command.EventId, command.GateId,
+                    ticket.SectorId.Value, AccessDirection.Exit, now, cancellationToken);
+                direction = hasExitRule ? AccessDirection.Exit : AccessDirection.Entry;
+            }
             else
             {
-                // EntryAndExitValidated: infere pelo estado do ticket
-                direction = ticket.PeopleInside > 0
-                    ? AccessDirection.Exit
-                    : AccessDirection.Entry;
+                direction = AccessDirection.Entry;
             }
         }
 
@@ -322,6 +330,15 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         if (!string.Equals(ticket.Status, "active", StringComparison.OrdinalIgnoreCase))
         {
             reason = "Ingresso inativo.";
+        }
+        // Ingresso já utilizado: é uma tentativa de ENTRADA mas não há entradas restantes.
+        // Verificado ANTES do setor para dar a mensagem correta ("já utilizado") em vez de
+        // "portaria sem autorização" quando o ticket é relido numa portaria de entrada.
+        else if (direction == AccessDirection.Entry && ticket.EntriesUsed >= ticket.MaximumEntries)
+        {
+            reason = ticket.LastUsedAt.HasValue
+                ? $"Ingresso já utilizado (última vez em {FormatLastUsed(ticket.LastUsedAt.Value)})."
+                : "Ingresso já utilizado.";
         }
         else if (ticket.SectorId.HasValue && !await HasActiveGateSectorAsync(
                      connection,
@@ -356,10 +373,6 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
                      cancellationToken))
         {
             reason = "Ingresso sem autorização para este evento, portaria, setor ou direção.";
-        }
-        else if (direction == AccessDirection.Entry && ticket.EntriesUsed >= ticket.MaximumEntries)
-        {
-            reason = "Limite de entradas do ingresso atingido.";
         }
         else if (direction == AccessDirection.Exit && ticket.PeopleInside <= 0)
         {
@@ -407,7 +420,7 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
                 }
                 else
                 {
-                    reason = "Ingresso atingiu o limite de entradas durante a validação.";
+                    reason = "Ingresso já utilizado.";
                 }
             }
             else
@@ -533,7 +546,7 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         sql.Transaction = transaction;
         sql.CommandText = """
             SELECT id, ticket_type_id, batch_id, status, maximum_uses, uses,
-                   maximum_entries, entries_used, people_inside, sector_id
+                   maximum_entries, entries_used, people_inside, sector_id, updated_at
             FROM fp_tickets
             WHERE event_id = @event_id
               AND code = @code
@@ -559,7 +572,8 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             Convert.ToInt32(reader.GetValue(6)),
             Convert.ToInt32(reader.GetValue(7)),
             Convert.ToInt32(reader.GetValue(8)),
-            ReadNullableGuid(reader, 9));
+            ReadNullableGuid(reader, 9),
+            ReadNullableDateTime(reader, 10));
     }
 
     private static async Task<bool> HasActiveGateSectorAsync(
@@ -896,6 +910,9 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
     private static string ResolveMessageCode(string? reason, bool approved)
     {
         if (approved) return "ACESSO_CONCEDIDO";
+        // "Ingresso já utilizado" pode conter a data da última utilização — casa por prefixo.
+        if (reason is not null && reason.StartsWith("Ingresso já utilizado", StringComparison.Ordinal))
+            return "INGRESSO_JA_UTILIZADO";
         return reason switch
         {
             "Crachá ou funcionário inativo." => "CRACHA_INATIVO",
@@ -906,9 +923,8 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             "Ingresso inativo." => "INGRESSO_INATIVO",
             "Ingresso sem associação ativa entre portaria, setor e direção." => "MATRIZ_NAO_AUTORIZADA",
             "Ingresso sem autorização para este evento, portaria, setor ou direção." => "INGRESSO_SEM_AUTORIZACAO",
-            "Limite de entradas do ingresso atingido." => "LIMITE_ENTRADAS_ATINGIDO",
             "Não há presença registrada para este ingresso." => "PRESENCA_NAO_REGISTRADA",
-            "Ingresso atingiu o limite de entradas durante a validação." => "LIMITE_ENTRADAS_CONCORRENTE",
+            "Ingresso atingiu o limite de entradas durante a validação." => "INGRESSO_JA_UTILIZADO",
             "Não há presença registrada para este ingresso durante a saída." => "SAIDA_SEM_PRESENCA",
             _ => "ACESSO_NEGADO"
         };
@@ -956,6 +972,23 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         throw new ArgumentException("Direction deve ser Entry ou Exit.");
     }
 
+    // Formata o horário da última utilização no fuso de São Paulo (dd/MM HH:mm).
+    private static string FormatLastUsed(DateTime lastUsedUtc)
+    {
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(
+                OperatingSystem.IsWindows() ? "E. South America Standard Time" : "America/Sao_Paulo");
+            var local = TimeZoneInfo.ConvertTimeFromUtc(
+                DateTime.SpecifyKind(lastUsedUtc, DateTimeKind.Utc), tz);
+            return local.ToString("dd/MM 'às' HH:mm");
+        }
+        catch
+        {
+            return DateTime.SpecifyKind(lastUsedUtc, DateTimeKind.Utc).ToString("dd/MM 'às' HH:mm 'UTC'");
+        }
+    }
+
     private static Guid ReadGuid(MySqlDataReader reader, int ordinal) =>
         Guid.Parse(reader.GetValue(ordinal).ToString()!);
 
@@ -977,7 +1010,8 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         int MaximumEntries,
         int EntriesUsed,
         int PeopleInside,
-        Guid? SectorId);
+        Guid? SectorId,
+        DateTime? LastUsedAt);
 
     private sealed record CredentialData(
         Guid CredentialId,

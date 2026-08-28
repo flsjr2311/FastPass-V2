@@ -28,9 +28,8 @@ public sealed class MySqlAccessMessageService : IAccessMessageService
             ["INGRESSO_INATIVO"] = new("Acesso negado", "Ingresso inativo.", "#EB3349", "#F45C43"),
             ["MATRIZ_NAO_AUTORIZADA"] = new("Acesso negado", "Ingresso sem associação ativa entre portaria, setor e direção.", "#EB3349", "#F45C43"),
             ["INGRESSO_SEM_AUTORIZACAO"] = new("Acesso negado", "Ingresso sem autorização para este evento, portaria, setor ou direção.", "#EB3349", "#F45C43"),
-            ["LIMITE_ENTRADAS_ATINGIDO"] = new("Acesso negado", "Limite de entradas do ingresso atingido.", "#EB3349", "#F45C43"),
+            ["INGRESSO_JA_UTILIZADO"] = new("Ingresso já utilizado", "Este ingresso já foi utilizado.", "#E67E22", "#F39C12"),
             ["PRESENCA_NAO_REGISTRADA"] = new("Acesso negado", "Não há presença registrada para este ingresso.", "#EB3349", "#F45C43"),
-            ["LIMITE_ENTRADAS_CONCORRENTE"] = new("Acesso negado", "Ingresso atingiu o limite de entradas durante a validação.", "#EB3349", "#F45C43"),
             ["SAIDA_SEM_PRESENCA"] = new("Acesso negado", "Não há presença registrada para este ingresso durante a saída.", "#EB3349", "#F45C43"),
         };
 

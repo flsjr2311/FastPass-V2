@@ -30,6 +30,11 @@ Rodada de correções, refinamentos operacionais e limpeza estrutural preparando
 - Tela de Tickets com **busca por código**, **filtro por status** e **alteração de status** direto na tabela (ativo/cancelado/revogado) — requer permissão `ticket.status`. A alteração de status só aparece para quem tem a permissão (Administrador e Gestor Operacional).
 - Colunas de **Setor** e **Lote** na listagem de tickets.
 
+#### Mensagem de ingresso já utilizado
+- Quando um ingresso já foi utilizado e é relido, a mensagem agora é clara: **"Ingresso já utilizado"** (antes aparecia "Portaria sem autorização para o setor", confuso).
+- O motivo registrado inclui **a data/hora da última utilização** (ex.: "Ingresso já utilizado (última vez em 28/08 às 08:39)"), visível na Auditoria e nos Últimos Acessos.
+- A inferência de direção passou a considerar a matriz: numa portaria que só valida entrada, reler um ingresso já dentro é tratado como tentativa de entrada (→ "já utilizado") em vez de saída indevida.
+
 #### Validação manual
 - Nova tela **"Validação Manual"** para o operador liberar acesso em exceções (backstage, convidados, falha de catraca).
 - Permite escolher a **portaria** e, opcionalmente, o **setor** de validação.
