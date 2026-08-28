@@ -37,7 +37,7 @@ const emptySummary: AttemptSummary = {
 };
 
 const screenLabels: Record<Screen, { label: string; icon: string; description: string; group: 'op' | 'cadastro' | 'operacao' | 'logs' | 'admin'; perm: string | null }> = {
-  dashboard:     { label: 'Dashboard',          icon: '⌂', description: 'Visão operacional dos seus eventos',              group: 'op',       perm: null },
+  dashboard:     { label: 'Dashboard',          icon: '⌂', description: 'Visão operacional dos seus eventos',              group: 'op',       perm: 'relatorio.ler' },
   clients:       { label: 'Clientes',            icon: '◧', description: 'Organizadores e clientes vinculados aos eventos', group: 'cadastro', perm: 'cliente.gerenciar' },
   events:        { label: 'Eventos',             icon: '◈', description: 'Agenda e configuração de eventos',                group: 'cadastro', perm: 'evento.criar' },
   configuration: { label: 'Portarias e Setores', icon: '⚙', description: 'Portarias, setores e regras de circulação',       group: 'operacao', perm: 'portaria.gerenciar' },
@@ -233,9 +233,11 @@ function App() {
         <div className="brand"><img className="brand-logo" src="/fastpass-logo-white.png" alt="FastPass Acesso" /><span className="brand-version">V2 Console</span></div>
         <div className="workspace-label">OPERAÇÃO</div>
         <nav className="main-nav" aria-label="Navegação principal">
+          {can(screenLabels['dashboard'].perm) && (
           <button key="dashboard" className={screen === 'dashboard' ? 'nav-item active' : 'nav-item'} onClick={() => goToScreen('dashboard')}>
             <span className="nav-icon">{screenLabels['dashboard'].icon}</span><span>{screenLabels['dashboard'].label}</span>
           </button>
+          )}
           {navGroups.map((group) => {
             const isOpen = openGroups[group.key];
             const visibleItems = group.items.filter((item) => {

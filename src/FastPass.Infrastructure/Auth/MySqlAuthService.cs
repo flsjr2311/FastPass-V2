@@ -48,9 +48,9 @@ public sealed class MySqlAuthService : IAuthService
             ]),
 
         (DefaultRoles.OperadorPortaria,
-            "Valida acesso nas portarias autorizadas",
+            "Valida acesso nas portarias autorizadas e consulta ingressos/relatórios",
             false,
-            [Permissions.AccessValidate]),
+            [Permissions.AccessValidate, Permissions.TicketsView, Permissions.ReportsView, Permissions.AccessesView]),
 
         (DefaultRoles.Auditor,
             "Leitura de relatórios e auditoria",
