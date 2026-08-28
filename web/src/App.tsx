@@ -699,9 +699,14 @@ function EventAdminPanel({ eventId, eventName }: { eventId: string; eventName: s
   </div>;
 }
 
-function TicketsView({ tickets, loading, hasEvent, eventId }: { tickets: TicketView[]; loading: boolean; hasEvent: boolean; eventId: string }) {
+function TicketsView({ tickets: _initialTickets, loading: _initialLoading, hasEvent, eventId }: { tickets: TicketView[]; loading: boolean; hasEvent: boolean; eventId: string }) {
   const [summary, setSummary] = useState<TicketSummaryView | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [tickets, setTickets] = useState<TicketView[]>(_initialTickets);
+  const [ticketsLoading, setTicketsLoading] = useState(_initialLoading);
+  const [searchCode, setSearchCode] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [statusChanging, setStatusChanging] = useState<string | null>(null);
 
   const loadSummary = () => {
     if (!eventId) { setSummary(null); return; }
@@ -709,19 +714,42 @@ function TicketsView({ tickets, loading, hasEvent, eventId }: { tickets: TicketV
     api.getTicketSummary(eventId).then(setSummary).catch(() => {}).finally(() => setSummaryLoading(false));
   };
 
-  useEffect(() => {
-    loadSummary();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId]);
+  const loadTickets = () => {
+    if (!eventId) return;
+    setTicketsLoading(true);
+    const filters: { code?: string; status?: string } = {};
+    if (searchCode.trim()) filters.code = searchCode.trim();
+    if (filterStatus) filters.status = filterStatus;
+    api.listTickets(eventId, filters).then(setTickets).catch(() => {}).finally(() => setTicketsLoading(false));
+  };
 
-  // Auto-refresh dos cards de resumo — reflete tickets validados/cancelados/importados
-  // enquanto o evento está rodando, sem precisar trocar de tela.
+  useEffect(() => { loadSummary(); }, [eventId]);
+  useEffect(() => { setTickets(_initialTickets); }, [_initialTickets]);
+
   useEffect(() => {
     if (!eventId) return;
     const interval = setInterval(loadSummary, 15000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
+
+  const handleSearch = (e: FormEvent) => {
+    e.preventDefault();
+    loadTickets();
+  };
+
+  const handleStatusChange = async (ticketId: string, newStatus: string) => {
+    if (!window.confirm(`Alterar status do ticket para '${newStatus}'?`)) return;
+    setStatusChanging(ticketId);
+    try {
+      await api.changeTicketStatus(eventId, ticketId, newStatus);
+      loadTickets();
+      loadSummary();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setStatusChanging(null);
+    }
+  };
 
   if (!hasEvent) return <section className="panel full-panel"><EmptyState message="Selecione um evento para consultar os tickets." /></section>;
   return <>
@@ -736,7 +764,16 @@ function TicketsView({ tickets, loading, hasEvent, eventId }: { tickets: TicketV
         {summaryLoading ? <span className="spinner" style={{ width: 11, height: 11 }} /> : '↻'}
       </button>
     </section>}
-    <section className="panel full-panel"><div className="panel-heading"><div><p className="panel-kicker">CREDENCIAIS DE ACESSO</p><h2>Tickets do evento</h2><p className="panel-subtitle">Uso, limite e situação dos ingressos emitidos.</p></div><button className="primary-button">+ Emitir ticket</button></div>{loading ? <div className="table-loading"><span className="spinner" />Carregando tickets...</div> : tickets.length === 0 ? <EmptyState message="Nenhum ticket encontrado para este evento." /> : <div className="table-scroll"><table><thead><tr><th>Ticket</th><th>Código</th><th>Entradas</th><th>Quota</th><th>Status</th><th>Criado em</th></tr></thead><tbody>{tickets.map((ticket) => <tr key={ticket.id}><td><strong>{ticket.externalId}</strong><small className="table-id">{ticket.ticketTypeId}</small></td><td><code>{ticket.code}</code></td><td><div className="usage-cell"><span>{ticket.entriesUsed}</span><div className="mini-progress"><i style={{ width: `${Math.min((ticket.entriesUsed / Math.max(ticket.maximumEntries, 1)) * 100, 100)}%` }} /></div></div></td><td>{ticket.maximumEntries}</td><td><StatusBadge value={ticket.status} /></td><td>{formatDate(ticket.createdAt, true)}</td><td><button className="matrix-remove-button" title="Cancelar ingresso" onClick={async () => { if (!window.confirm(`Cancelar o ingresso ${ticket.code}?`)) return; try { await (api as any).cancelTicket(eventId, ticket.id); } catch (r: any) { alert(r?.message ?? String(r)); } }}>Cancelar</button></td></tr>)}</tbody></table></div>}</section>
+    <section className="panel full-panel"><div className="panel-heading"><div><p className="panel-kicker">CREDENCIAIS DE ACESSO</p><h2>Tickets do evento</h2><p className="panel-subtitle">Busque por código, filtre por status e altere a situação dos ingressos.</p></div></div>
+      <form className="ticket-search-form" onSubmit={handleSearch}>
+        <label>Código do ticket<input value={searchCode} onChange={(e) => setSearchCode(e.target.value)} placeholder="Digite o código exato" /></label>
+        <label>Status<select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}><option value="">Todos</option><option value="active">Ativo</option><option value="cancelled">Cancelado</option><option value="revoked">Revogado</option></select></label>
+        <button className="primary-button" type="submit" disabled={ticketsLoading}>{ticketsLoading ? 'Buscando...' : 'Buscar'}</button>
+        {(searchCode || filterStatus) && <button className="secondary-button" type="button" onClick={() => { setSearchCode(''); setFilterStatus(''); setTimeout(loadTickets, 0); }}>Limpar</button>}
+      </form>
+      {ticketsLoading ? <div className="table-loading"><span className="spinner" />Carregando tickets...</div> : tickets.length === 0 ? <EmptyState message="Nenhum ticket encontrado com os filtros informados." /> : <div className="table-scroll"><table><thead><tr><th>Ticket</th><th>Código</th><th>Setor</th><th>Entradas</th><th>Quota</th><th>Status</th><th>Ações</th></tr></thead><tbody>{tickets.slice(0, 200).map((ticket) => <tr key={ticket.id}><td><strong>{ticket.externalId || '—'}</strong><small className="table-id">{ticket.id.slice(0, 8)}</small></td><td><code>{ticket.code}</code></td><td>{ticket.sectorName || '—'}</td><td><div className="usage-cell"><span>{ticket.entriesUsed ?? 0}</span><div className="mini-progress"><i style={{ width: `${Math.min(((ticket.entriesUsed ?? 0) / Math.max(ticket.maximumEntries ?? 1, 1)) * 100, 100)}%` }} /></div></div></td><td>{ticket.maximumEntries ?? 1}</td><td><StatusBadge value={ticket.status} /></td><td><select disabled={statusChanging === ticket.id} value={ticket.status} onChange={(e) => handleStatusChange(ticket.id, e.target.value)}><option value="active">Ativo</option><option value="cancelled">Cancelado</option><option value="revoked">Revogado</option></select></td></tr>)}</tbody></table></div>}
+      {tickets.length > 200 && <p className="panel-subtitle" style={{ padding: '8px 16px' }}>Mostrando 200 de {tickets.length} tickets. Use os filtros para refinar.</p>}
+    </section>
   </>;
 }
 
@@ -1201,7 +1238,7 @@ function AuditView({ attempts, loading }: { attempts: AttemptPage | null; loadin
 
 function AttemptTable({ attempts, expanded = false }: { attempts: AttemptPage['data']; expanded?: boolean }) {
   if (attempts.length === 0) return <EmptyState message="Ainda não há tentativas de acesso registradas." />;
-  return <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Credencial</th><th>Portaria / setor</th><th>Direção</th><th>Decisão</th><th>{expanded ? 'Motivo' : 'Status'}</th></tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.attemptId}><td>{formatDate(attempt.requestedAt || attempt.createdAt, true)}</td><td><strong>{attempt.credentialType === 'StaffBadge' ? attempt.staffName || 'Crachá master' : attempt.ticketExternalId || 'Ingresso'}</strong><small className="table-id">{attempt.credentialCodeMasked}</small></td><td><strong>{attempt.gateName || 'Portaria não informada'}</strong><small>{attempt.sectorName || 'Setor não informado'}</small></td><td><span className="direction">{attempt.direction === 'Entry' ? '↓ Entrada' : '↑ Saída'}</span></td><td><StatusBadge value={attempt.decision} /></td><td>{expanded ? attempt.reason || '—' : <span className="muted-text">{attempt.status}</span>}</td></tr>)}</tbody></table></div>;
+  return <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Credencial</th><th>Portaria / setor</th><th>Setor do ingresso</th><th>Direção</th><th>Decisão</th><th>{expanded ? 'Motivo' : 'Status'}</th></tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.attemptId}><td>{formatDate(attempt.requestedAt || attempt.createdAt, true)}</td><td><strong>{attempt.credentialType === 'StaffBadge' ? attempt.staffName || 'Crachá master' : attempt.ticketExternalId || 'Ingresso'}</strong><small className="table-id">{attempt.credentialCodeMasked}</small></td><td><strong>{attempt.gateName || 'Portaria não informada'}</strong><small>{attempt.sectorName || 'Setor não informado'}</small></td><td>{attempt.ticketSectorName || '—'}</td><td><span className="direction">{attempt.direction === 'Entry' ? '↓ Entrada' : '↑ Saída'}</span></td><td><StatusBadge value={attempt.decision} /></td><td>{expanded ? attempt.reason || '—' : <span className="muted-text">{attempt.status}</span>}</td></tr>)}</tbody></table></div>;
 }
 
 function StaffView({ eventId, gates: _g }: { eventId: string; gates: GateView[] }) {

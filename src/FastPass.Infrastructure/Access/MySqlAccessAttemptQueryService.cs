@@ -14,6 +14,7 @@ public sealed class MySqlAccessAttemptQueryService : IAccessAttemptQueryService
         LEFT JOIN fp_staff_members s ON s.id = c.staff_member_id
         LEFT JOIN fp_gates g ON g.id = a.gate_id
         LEFT JOIN fp_sectors sec ON sec.id = a.sector_id
+        LEFT JOIN fp_sectors tsec ON tsec.id = t.sector_id
         LEFT JOIN fp_devices d ON d.id = a.device_id
         """;
 
@@ -45,7 +46,7 @@ public sealed class MySqlAccessAttemptQueryService : IAccessAttemptQueryService
             SELECT a.id, a.event_id, a.ticket_id, a.staff_credential_id, c.staff_member_id,
                    a.gate_id, a.sector_id, a.device_id, a.credential_type, a.direction, a.decision,
                    a.reason, a.status, a.credential_code, t.external_id, s.name,
-                   g.name, sec.name, d.name, a.requested_at, a.created_at
+                   g.name, sec.name, d.name, a.requested_at, a.created_at, tsec.name
             {FromSql}
             WHERE {WhereSql}
             ORDER BY a.requested_at DESC, a.id DESC
@@ -80,7 +81,8 @@ public sealed class MySqlAccessAttemptQueryService : IAccessAttemptQueryService
                 reader.IsDBNull(17) ? null : reader.GetString(17),
                 reader.IsDBNull(18) ? null : reader.GetString(18),
                 ReadDateTimeOffset(reader, 19),
-                ReadDateTimeOffset(reader, 20)));
+                ReadDateTimeOffset(reader, 20),
+                reader.IsDBNull(21) ? null : reader.GetString(21)));
         }
 
         return new AccessAttemptPage(

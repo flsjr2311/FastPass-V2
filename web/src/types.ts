@@ -192,6 +192,7 @@ export interface AttemptView {
   gateName?: string | null;
   sectorName?: string | null;
   deviceName?: string | null;
+  ticketSectorName?: string | null;
   requestedAt: string;
   createdAt: string;
 }

@@ -143,8 +143,17 @@ export const api = {
   listStaffAccess: (staffId: string, eventId?: string) =>
     request<StaffAccessView[]>(`/api/staff/${staffId}/access${eventId ? `?eventId=${eventId}` : ''}`),
 
-  listTickets: (eventId: string) => request<TicketView[]>(`/api/events/${eventId}/tickets`),
+  listTickets: (eventId: string, filters?: { code?: string; status?: string; externalId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.code) params.set('code', filters.code);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.externalId) params.set('externalId', filters.externalId);
+    const qs = params.toString();
+    return request<TicketView[]>(`/api/events/${eventId}/tickets${qs ? `?${qs}` : ''}`);
+  },
   getTicketSummary: (eventId: string) => request<TicketSummaryView>(`/api/events/${eventId}/tickets/summary`),
+  changeTicketStatus: (eventId: string, ticketId: string, status: string) =>
+    request<{ message: string }>(`/api/events/${eventId}/tickets/${ticketId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }),
   exportEventZip: (eventId: string) => `${API_BASE_URL}/api/events/${eventId}/export`,
   validateApp: (payload: AccessValidationPayload) =>
     request<AccessValidationResult>('/api/access/app/validate', {

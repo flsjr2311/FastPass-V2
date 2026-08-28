@@ -536,6 +536,30 @@ app.MapDelete("/api/events/{eventId:guid}", async (
         : Results.Ok(new { message = "Evento excluído com sucesso." });
 });
 
+// Ticket individual: alterar status (active, cancelled, revoked) — requer ticket.status
+app.MapPut("/api/events/{eventId:guid}/tickets/{ticketId:guid}/status", async (
+    Guid eventId, Guid ticketId, TicketStatusCommand command,
+    HttpContext ctx, CancellationToken ct,
+    FastPassDbConnectionFactory dbFactory) =>
+{
+    if (ctx.RequirePermission("ticket.status") is { } e) return e;
+    var newStatus = (command.Status ?? "").Trim().ToLowerInvariant();
+    if (!new[] { "active", "cancelled", "revoked" }.Contains(newStatus))
+        return Results.BadRequest(new { error = "Status deve ser 'active', 'cancelled' ou 'revoked'." });
+    await using var conn = dbFactory.Create();
+    await conn.OpenAsync(ct);
+    await using var cmd = conn.CreateCommand();
+    cmd.CommandText = "UPDATE fp_tickets SET status=@st,updated_at=@now WHERE id=@id AND event_id=@eid;";
+    cmd.Parameters.AddWithValue("@st", newStatus);
+    cmd.Parameters.AddWithValue("@now", DateTime.UtcNow);
+    cmd.Parameters.AddWithValue("@id", ticketId.ToString());
+    cmd.Parameters.AddWithValue("@eid", eventId.ToString());
+    var rows = await cmd.ExecuteNonQueryAsync(ct);
+    return rows == 0
+        ? Results.NotFound(new { error = "Ticket não encontrado." })
+        : Results.Ok(new { message = $"Status alterado para '{newStatus}'." });
+});
+
 // Ticket individual: cancelar/revogar (soft-delete via status)
 app.MapDelete("/api/events/{eventId:guid}/tickets/{ticketId:guid}", async (
     Guid eventId, Guid ticketId, string? status,
@@ -1121,6 +1145,8 @@ static string ExportEscape(string value) =>
 public sealed record BulkTicketStatusCommand(
     IReadOnlyList<Guid> TicketIds,
     string Status);
+
+public sealed record TicketStatusCommand(string Status);
 
 public sealed record DeleteEventDataCommand(string Confirmation);
 
