@@ -196,6 +196,10 @@ public interface IAuthService
     Task ChangePasswordAsync(Guid userId, ChangePasswordCommand command,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Reset de senha por administrador (não exige senha atual). Revoga as sessões do usuário.</summary>
+    Task ResetPasswordAsync(Guid userId, string newPassword,
+        CancellationToken cancellationToken = default);
+
     // Usuários
     Task<UserView> CreateUserAsync(CreateUserCommand command,
         CancellationToken cancellationToken = default);

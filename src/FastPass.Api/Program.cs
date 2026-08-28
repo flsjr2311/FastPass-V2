@@ -175,6 +175,19 @@ app.MapPost("/api/users/{userId:guid}/unblock", async (Guid userId, IAuthService
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
+// Reset de senha de outro usuário por administrador (não exige senha atual).
+app.MapPost("/api/users/{userId:guid}/reset-password", async (
+    Guid userId, ResetPasswordCommand command, IAuthService auth, HttpContext ctx, CancellationToken ct) =>
+{
+    if (ctx.RequirePermission("usuario.gerenciar") is { } e) return e;
+    try
+    {
+        await auth.ResetPasswordAsync(userId, command.NewPassword, ct);
+        return Results.Ok(new { message = "Senha redefinida. O usuário deverá entrar com a nova senha." });
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
 app.MapGet("/api/permissions", async (IAuthService auth, HttpContext ctx, CancellationToken ct) =>
 {
     if (ctx.RequirePermission("usuario.gerenciar") is { } e) return e;
@@ -1122,6 +1135,8 @@ public sealed record BulkTicketStatusCommand(
     string Status);
 
 public sealed record TicketStatusCommand(string Status);
+
+public sealed record ResetPasswordCommand(string NewPassword);
 
 public sealed record DeleteEventDataCommand(string Confirmation);
 

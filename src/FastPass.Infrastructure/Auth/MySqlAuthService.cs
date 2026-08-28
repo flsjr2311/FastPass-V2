@@ -217,6 +217,33 @@ public sealed class MySqlAuthService : IAuthService
         catch { await tx.RollbackAsync(ct); throw; }
     }
 
+    public async Task ResetPasswordAsync(Guid userId, string newPassword, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
+            throw new ArgumentException("A nova senha deve ter pelo menos 8 caracteres.");
+        await using var conn = _factory.Create();
+        await conn.OpenAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        try
+        {
+            var exists = await Scalar(conn, tx,
+                "SELECT id FROM fp_users WHERE id=@id LIMIT 1;", ct, ("@id", userId.ToString()));
+            if (exists is null) throw new ArgumentException("Usuário não encontrado.");
+
+            var now = DateTime.UtcNow;
+            // Reseta a senha e desbloqueia (limpa tentativas falhas / bloqueio) para o admin poder liberar o usuário.
+            await Exec(conn, tx,
+                "UPDATE fp_users SET password_hash=@ph,failed_attempts=0,blocked_until=NULL,updated_at=@now WHERE id=@id;",
+                ct, ("@ph", HashPassword(newPassword)), ("@now", now), ("@id", userId.ToString()));
+            // Revoga sessões ativas: o usuário precisará entrar com a nova senha.
+            await Exec(conn, tx,
+                "UPDATE fp_sessions SET revoked_at=@now WHERE user_id=@id AND revoked_at IS NULL;",
+                ct, ("@now", now), ("@id", userId.ToString()));
+            await tx.CommitAsync(ct);
+        }
+        catch { await tx.RollbackAsync(ct); throw; }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // Usuários
     // ═══════════════════════════════════════════════════════════════════════

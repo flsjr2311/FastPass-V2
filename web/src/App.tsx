@@ -1898,6 +1898,17 @@ function UsersView() {
     } catch (reason: unknown) { setError(reason instanceof Error ? reason.message : 'Erro.'); }
   }
 
+  async function handleResetPassword(user: UserView) {
+    const nova = window.prompt(`Nova senha para "${user.displayName}" (mínimo 8 caracteres):`);
+    if (nova === null) return; // cancelou
+    if (nova.trim().length < 8) { setError('A nova senha deve ter pelo menos 8 caracteres.'); return; }
+    setError(null); setNotice(null);
+    try {
+      await api.resetUserPassword(user.id, nova.trim());
+      setNotice(`Senha de "${user.displayName}" redefinida. O usuário deverá entrar com a nova senha.`);
+    } catch (reason: unknown) { setError(reason instanceof Error ? reason.message : 'Erro ao redefinir senha.'); }
+  }
+
   async function handleCreateRole(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!newRoleName.trim()) { setError('Informe o nome do perfil.'); return; }
@@ -2093,6 +2104,8 @@ function UsersView() {
                         onClick={() => startEditUser(user)}>Editar</button>
                       <button className="secondary-button" style={{ fontSize: 9, padding: '4px 8px' }}
                         onClick={() => handleToggleUser(user)}>{user.active ? 'Desativar' : 'Ativar'}</button>
+                      <button className="secondary-button" style={{ fontSize: 9, padding: '4px 8px', color: '#5875db' }}
+                        onClick={() => handleResetPassword(user)}>Redefinir senha</button>
                       {isBlocked(user) && (
                         <button className="secondary-button" style={{ fontSize: 9, padding: '4px 8px', color: '#e66c7d' }}
                           onClick={() => handleUnblock(user.id)}>Desbloquear</button>

@@ -65,6 +65,8 @@ export const api = {
     request<UserView>(`/api/users/${userId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   unblockUser: (userId: string) =>
     request<{ message: string }>(`/api/users/${userId}/unblock`, { method: 'POST' }),
+  resetUserPassword: (userId: string, newPassword: string) =>
+    request<{ message: string }>(`/api/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({ newPassword }) }),
   listRoles: () => request<RoleView[]>('/api/roles'),
   createRole: (payload: { name: string; description?: string }) =>
     request<RoleView>('/api/roles', { method: 'POST', body: JSON.stringify(payload) }),
