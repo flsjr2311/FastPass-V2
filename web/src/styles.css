@@ -18,7 +18,10 @@ button { cursor: pointer; border: 0; }
 .main-nav::-webkit-scrollbar { width: 6px; }
 .main-nav::-webkit-scrollbar-thumb { background: #26374f; border-radius: 3px; }
 .nav-group { display: grid; gap: 2px; margin-bottom: 4px; }
-.nav-group-label { display: block; padding: 14px 14px 6px; color: #4a6080; font-size: 9px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; }
+.nav-group-label { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 13px 14px 6px; color: #4a6080; background: transparent; font-size: 9px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; cursor: pointer; transition: color .15s ease; }
+.nav-group-label:hover { color: #7f93b6; }
+.nav-group-caret { display: inline-block; color: #5b6d8f; font-size: 9px; transition: transform .18s ease; }
+.nav-group-caret.open { transform: rotate(180deg); }
 .event-admin-panel, .import-detail-panel { white-space: normal; }
 .event-admin-panel .alert-error, .import-detail-panel .alert-error { white-space: normal; }
 .event-admin-panel .alert-error span, .import-detail-panel .alert-error span { overflow: visible; white-space: normal; text-overflow: initial; }

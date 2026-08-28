@@ -107,10 +107,19 @@ const navGroups: { key: string; label: string; items: Screen[] }[] = [
 function App() {
   const [session, setSession] = useState<SessionView | null | undefined>(undefined); // undefined = carregando
   const [screen, setScreen] = useState<Screen>('dashboard');
+  // Accordion: apenas um grupo aberto por vez (null = todos fechados).
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
 
-  /** Troca de tela. */
+  /** Troca de tela, abrindo o grupo da tela alvo (e fechando os demais). */
   function goToScreen(target: Screen) {
     setScreen(target);
+    const group = navGroups.find((g) => g.items.includes(target));
+    if (group) setOpenGroup(group.key);
+  }
+
+  /** Alterna o grupo: abre este (fechando os outros) ou fecha se já estava aberto. */
+  function toggleGroup(key: string) {
+    setOpenGroup((current) => (current === key ? null : key));
   }
 
   /** Verifica se a sessão atual tem uma permissão. */
@@ -146,8 +155,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Ao confirmar a sessão, leva o usuário para a primeira tela que ele pode acessar.
-    if (session) setScreen(firstAllowedScreen());
+    // Ao confirmar a sessão, leva o usuário para a primeira tela que ele pode acessar
+    // e abre o grupo correspondente no menu (accordion).
+    if (session) {
+      const target = firstAllowedScreen();
+      setScreen(target);
+      const group = navGroups.find((g) => g.items.includes(target));
+      setOpenGroup(group ? group.key : null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
@@ -235,10 +250,14 @@ function App() {
               return perm === null || session.permissions.includes(perm);
             });
             if (visibleItems.length === 0) return null; // esconde grupos sem itens visíveis
+            const isOpen = openGroup === group.key;
             return (
               <div className="nav-group" key={group.key}>
-                <span className="nav-group-label">{group.label}</span>
-                {visibleItems.map((item) => (
+                <button type="button" className="nav-group-label" onClick={() => toggleGroup(group.key)} aria-expanded={isOpen}>
+                  <span>{group.label}</span>
+                  <span className={`nav-group-caret${isOpen ? ' open' : ''}`}>▾</span>
+                </button>
+                {isOpen && visibleItems.map((item) => (
                   <button key={item} className={screen === item ? 'nav-item active' : 'nav-item'} onClick={() => goToScreen(item)}>
                     <span className="nav-icon">{screenLabels[item].icon}</span><span className="nav-text">{screenLabels[item].label}</span>
                     {item === 'audit' && attempts?.total ? <em>{attempts.total}</em> : null}
