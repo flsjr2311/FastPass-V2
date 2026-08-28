@@ -1,0 +1,7 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Tema base; a UI real é definida em Compose (FastPassTheme). -->
+    <style name="Theme.FastPass" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#1B2940</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

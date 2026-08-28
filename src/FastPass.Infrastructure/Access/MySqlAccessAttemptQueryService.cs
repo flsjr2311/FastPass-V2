@@ -45,7 +45,7 @@ public sealed class MySqlAccessAttemptQueryService : IAccessAttemptQueryService
             SELECT a.id, a.event_id, a.ticket_id, a.staff_credential_id, a.staff_credential_id,
                    a.gate_id, a.sector_id, a.device_id, a.credential_type, a.direction, a.decision,
                    a.reason, a.status, a.credential_code, t.external_id, s.display_name,
-                   g.name, sec.name, d.name, a.requested_at, a.created_at, tsec.name, a.channel
+                   g.name, sec.name, d.name, a.requested_at, a.created_at, tsec.name, a.channel, a.app_device_label
             {FromSql}
             WHERE {WhereSql}
             ORDER BY a.requested_at DESC, a.id DESC
@@ -82,7 +82,8 @@ public sealed class MySqlAccessAttemptQueryService : IAccessAttemptQueryService
                 ReadDateTimeOffset(reader, 19),
                 ReadDateTimeOffset(reader, 20),
                 reader.IsDBNull(21) ? null : reader.GetString(21),
-                reader.IsDBNull(22) ? null : reader.GetString(22)));
+                reader.IsDBNull(22) ? null : reader.GetString(22),
+                reader.IsDBNull(23) ? null : reader.GetString(23)));
         }
 
         return new AccessAttemptPage(

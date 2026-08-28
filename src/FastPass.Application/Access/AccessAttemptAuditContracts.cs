@@ -38,7 +38,8 @@ public sealed record AccessAttemptAuditView(
     DateTimeOffset RequestedAt,
     DateTimeOffset CreatedAt,
     string? TicketSectorName = null,
-    string? Channel = null);
+    string? Channel = null,
+    string? AppDeviceLabel = null);
 
 public sealed record AccessAttemptPage(
     IReadOnlyList<AccessAttemptAuditView> Data,

@@ -8,7 +8,10 @@ public sealed record ValidateAccessCommand(
     string? Direction,
     string IdempotencyKey,
     Guid? DeviceId = null,
-    string Channel = "Turnstile");
+    string Channel = "Turnstile",
+    // Identificação do aparelho do APP (não é um device físico cadastrado).
+    string? AppDeviceLabel = null,
+    string? AppDeviceInstallId = null);
 
 public sealed record AccessValidationResult(
     Guid AttemptId,

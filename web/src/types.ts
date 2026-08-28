@@ -236,6 +236,7 @@ export interface AttemptView {
   sectorName?: string | null;
   deviceName?: string | null;
   ticketSectorName?: string | null;
+  appDeviceLabel?: string | null;
   requestedAt: string;
   createdAt: string;
 }

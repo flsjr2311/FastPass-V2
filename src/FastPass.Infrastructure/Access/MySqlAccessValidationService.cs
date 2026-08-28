@@ -772,12 +772,12 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         sql.Transaction = transaction;
         sql.CommandText = """
             INSERT INTO fp_access_attempts
-                (id, event_id, ticket_id, staff_credential_id, gate_id, sector_id, device_id,
+                (id, event_id, ticket_id, staff_credential_id, gate_id, sector_id, device_id, app_device_label, app_device_install_id,
                  credential_code, credential_type, direction, decision, reason, reason_code, message, message_presentation_json, status,
                  idempotency_key, requested_at, created_at, channel, arm_action, pictogram,
                  entries_before, entries_after, people_inside_before, people_inside_after)
             VALUES
-                (@id, @event_id, @ticket_id, @staff_credential_id, @gate_id, @sector_id, @device_id,
+                (@id, @event_id, @ticket_id, @staff_credential_id, @gate_id, @sector_id, @device_id, @app_device_label, @app_device_install_id,
                  @credential_code, @credential_type, @direction, @decision, @reason, @reason_code, @message, @message_presentation_json, @status,
                  @idempotency_key, @requested_at, @created_at, @channel, @arm_action, @pictogram,
                  @entries_before, @entries_after, @people_inside_before, @people_inside_after);
@@ -789,6 +789,10 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         sql.Parameters.AddWithValue("@gate_id", command.GateId.ToString());
         sql.Parameters.AddWithValue("@sector_id", (object?)command.SectorId?.ToString() ?? DBNull.Value);
         sql.Parameters.AddWithValue("@device_id", (object?)command.DeviceId?.ToString() ?? DBNull.Value);
+        sql.Parameters.AddWithValue("@app_device_label",
+            (object?)Truncate(command.AppDeviceLabel, 128) ?? DBNull.Value);
+        sql.Parameters.AddWithValue("@app_device_install_id",
+            (object?)Truncate(command.AppDeviceInstallId, 64) ?? DBNull.Value);
         sql.Parameters.AddWithValue("@credential_code", command.CredentialCode?.Trim() ?? string.Empty);
         sql.Parameters.AddWithValue("@credential_type", credentialType);
         sql.Parameters.AddWithValue("@direction", direction.ToString());
@@ -987,6 +991,13 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         {
             return DateTime.SpecifyKind(lastUsedUtc, DateTimeKind.Utc).ToString("dd/MM 'às' HH:mm 'UTC'");
         }
+    }
+
+    private static string? Truncate(string? value, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var trimmed = value.Trim();
+        return trimmed.Length > max ? trimmed[..max] : trimmed;
     }
 
     private static Guid ReadGuid(MySqlDataReader reader, int ordinal) =>

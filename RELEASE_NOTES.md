@@ -56,6 +56,14 @@ Rodada de correções, refinamentos operacionais e limpeza estrutural preparando
 - Ambas as telas exigem a permissão `auditoria.ler` e têm filtros (usuário, desfecho/ação) e paginação. Endpoints `GET /api/login-log` e `GET /api/audit-trail`.
 - A gravação das trilhas é *best-effort*: uma falha ao registrar nunca interrompe o login nem a operação do usuário.
 
+#### App Android (validação na portaria)
+- Novo **app Android** (Kotlin + Jetpack Compose) em `android/` para validar ingressos na portaria.
+- Fluxo: login do operador → escolha de **evento** e **portaria** → leitura do QR/código → feedback **verde (liberado) / vermelho (negado)** com som e vibração, e feed das últimas validações.
+- Três formas de leitura: **câmera** (CameraX + ML Kit), **leitor USB-C** (HID, digita e envia Enter) e **digitação manual**.
+- Usa a **sessão** do operador (usuário/senha) e exige a permissão `acesso.validar`. Cada aparelho tem um **nome amigável** e um id de instalação, gravados na auditoria de acessos.
+- O endpoint `POST /api/access/app/validate` passou a **exigir sessão autenticada + `acesso.validar`** (antes estava aberto).
+- Identificação do aparelho do app registrada em `fp_access_attempts` (`app_device_label`, `app_device_install_id`) e exibida na Auditoria de acessos com o selo **📱 App**.
+
 #### Frontend
 - Frontend web React + Vite (tela de login, dashboard, catálogo, tickets, auditoria, importação, relatórios).
 - Correção do proxy Vite para a porta atual da API (5088).
@@ -73,7 +81,7 @@ Rodada de correções, refinamentos operacionais e limpeza estrutural preparando
 
 ---
 
-### Migrações de banco (016–020)
+### Migrações de banco (016–021)
 
 | # | Arquivo | Conteúdo |
 |---|---------|----------|
@@ -82,6 +90,7 @@ Rodada de correções, refinamentos operacionais e limpeza estrutural preparando
 | 018 | `018_remove_staff.sql` | Remove tabelas de staff, coluna `staff_member_id` e FK de `access_attempts` |
 | 019 | `019_login_log.sql` | Tabela `fp_login_log` (trilha de acessos ao sistema / login) |
 | 020 | `020_audit_trail.sql` | Tabela `fp_audit_trail` (trilha de auditoria de ações no sistema) |
+| 021 | `021_app_device_label.sql` | Identificação do aparelho do app em `fp_access_attempts` (`app_device_label`, `app_device_install_id`) |
 
 ### Limpeza de dados
 - Removidas portarias órfãs (smoke tests), setores inativos e locais sem evento.

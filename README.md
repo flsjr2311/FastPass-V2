@@ -44,6 +44,8 @@ O FastPass V2 gerencia todo o ciclo de vida de controle de acesso em eventos: de
 | `FastPass.Domain` | Class Library | Entidades e enums do domínio |
 | `FastPass.Infrastructure` | Class Library | Implementações MySQL, migrações, ADO.NET |
 | `FastPass.Worker` | Worker Service | Serviço de background (health-check, futuro: sync) |
+| `web/` | React + Vite | Painel web (dashboard, catálogo, tickets, auditoria, relatórios) |
+| `android/` | Kotlin + Compose | App de validação na portaria (câmera, leitor USB-C, manual) |
 
 ## Stack Tecnológica
 
@@ -107,6 +109,13 @@ O FastPass V2 gerencia todo o ciclo de vida de controle de acesso em eventos: de
 - Escolha de portaria e setor de validação
 - Contabiliza na portaria/setor e marca o registro como `Manual` (canal), visível na auditoria
 - Restrita a Administrador, Gestor Operacional e Operador de Portaria (`acesso.validar`)
+
+### App Android (validação na portaria)
+- App em `android/` (Kotlin + Jetpack Compose). Login do operador, escolha de evento/portaria e leitura do QR/código.
+- Leitura por **câmera** (CameraX + ML Kit), **leitor USB-C** (HID) ou **digitação manual**.
+- Feedback verde/vermelho com som e vibração; feed das últimas validações.
+- Usa a sessão do operador e exige `acesso.validar`. Identifica o aparelho (nome + id de instalação) na auditoria.
+- Detalhes de build e configuração em `android/README.md`.
 
 ### Relatórios
 - Histórico de tentativas de acesso (filtros, paginação)
@@ -188,6 +197,7 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 | 018 | Remoção completa da função de staff |
 | 019 | Trilha de acessos ao sistema (`fp_login_log`) |
 | 020 | Trilha de auditoria de ações (`fp_audit_trail`) |
+| 021 | Identificação do aparelho do app em `fp_access_attempts` |
 
 ## Endpoints Principais
 
@@ -219,7 +229,7 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 ### Validação de Acesso
 | Método | Rota | Descrição |
 |--------|------|-----------|
-| POST | `/api/access/app/validate` | Validação via App |
+| POST | `/api/access/app/validate` | Validação via App (requer sessão + `acesso.validar`) |
 | POST | `/api/access/turnstile/validate` | Validação via Catraca |
 | POST | `/api/access/manual/validate` | Validação manual pelo operador (requer sessão + `acesso.validar`) |
 | POST | `/api/access/validate` | Validação genérica |
@@ -244,12 +254,13 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 - [x] Validação manual pelo operador (canal Manual, marcado na auditoria)
 - [x] Reset de senha de outro usuário por administrador
 - [x] Trilha de acessos ao sistema (login) e trilha de auditoria de ações (middleware)
+- [x] **App Android** — validação de ingressos (câmera/leitor USB-C/manual) com sessão do operador e identificação do aparelho
 
 ### Prioridade Alta
 - [ ] **Integração com catracas Vcom** — comunicação serial/TCP com catracas USR-Vcom
 - [ ] **Integração MQTT** — comunicação com catracas via broker MQTT
-- [ ] **App Android** — leitura de QR Code/barras + validação de ingressos
 - [ ] **Worker funcional** — processamento do outbox de sync para dispositivos
+- [ ] Compilar o app Android no Android Studio e validar em campo (câmera + leitor USB-C real)
 
 ### Prioridade Média
 - [ ] Testes automatizados (unitários + integração)

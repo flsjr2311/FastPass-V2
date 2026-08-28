@@ -669,8 +669,10 @@ app.MapGet("/api/events/{eventId:guid}/access-attempts/summary", async (
 // (sem permissão de sessão: o APP/catraca autentica por IdempotencyKey + DeviceId)
 // ══════════════════════════════════════════════════════════════════════════════
 
-app.MapPost("/api/access/app/validate", async (ValidateAccessCommand command, IAccessValidationService svc, CancellationToken ct) =>
+app.MapPost("/api/access/app/validate", async (ValidateAccessCommand command, IAccessValidationService svc, HttpContext ctx, CancellationToken ct) =>
 {
+    // O app do operador usa a sessão logada e exige permissão de validar acesso.
+    if (ctx.RequirePermission("acesso.validar") is { } e) return e;
     try
     {
         var result = await svc.ValidateAsync(
