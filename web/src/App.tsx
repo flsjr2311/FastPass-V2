@@ -1340,25 +1340,24 @@ function LoginLogView() {
   }
 
   return <section className="panel full-panel">
-    <div className="panel-heading">
-      <div><p className="panel-kicker">SEGURANÇA</p><h2>Acessos ao sistema</h2>
-        <p className="panel-subtitle">{`${total} tentativa(s) de login registrada(s)`}</p></div>
+    <div className="audit-toolbar">
+      <span className="audit-count"><strong>{total}</strong> tentativa(s) de login</span>
+      <form className="audit-filter-bar" onSubmit={applyFilters}>
+        <div className="audit-field"><label>Usuário</label>
+          <input value={userName} onChange={(ev) => setUserName(ev.target.value)} placeholder="nome de usuário" /></div>
+        <div className="audit-field"><label>Desfecho</label>
+          <select value={outcome} onChange={(ev) => setOutcome(ev.target.value)}>
+            <option value="">Todos</option>
+            <option value="Success">Sucesso</option>
+            <option value="InvalidPassword">Senha inválida</option>
+            <option value="UnknownUser">Usuário inexistente</option>
+            <option value="Blocked">Conta bloqueada</option>
+            <option value="Inactive">Usuário inativo</option>
+          </select></div>
+        <button className="primary-button" type="submit">Filtrar</button>
+      </form>
     </div>
-    <form className="filter-bar" onSubmit={applyFilters} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>Usuário
-        <input value={userName} onChange={(ev) => setUserName(ev.target.value)} placeholder="nome de usuário" /></label>
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>Desfecho
-        <select value={outcome} onChange={(ev) => setOutcome(ev.target.value)}>
-          <option value="">Todos</option>
-          <option value="Success">Sucesso</option>
-          <option value="InvalidPassword">Senha inválida</option>
-          <option value="UnknownUser">Usuário inexistente</option>
-          <option value="Blocked">Conta bloqueada</option>
-          <option value="Inactive">Usuário inativo</option>
-        </select></label>
-      <button className="primary-button" type="submit">Filtrar</button>
-    </form>
-    {error && <div className="notice error">{error}</div>}
+    {error && <div className="alert-error"><span>{error}</span></div>}
     {loading ? <div className="table-loading"><span className="spinner" />Carregando...</div>
       : data.length === 0 ? <EmptyState message="Nenhum acesso registrado com os filtros atuais." />
       : <>
@@ -1366,8 +1365,8 @@ function LoginLogView() {
           <tbody>{data.map((r) => { const o = loginOutcomeLabel(r.outcome); return (
             <tr key={r.id}>
               <td>{formatDate(r.createdAt, true)}</td>
-              <td><strong>{r.userName}</strong>{r.displayName && <small className="table-id">{r.displayName}</small>}</td>
-              <td><StatusBadge value={o.tone} />{' '}<span className="muted-text">{o.label}</span></td>
+              <td><strong>{r.userName}</strong>{r.displayName && <small>{r.displayName}</small>}</td>
+              <td><span className="audit-outcome"><StatusBadge value={o.tone} /><span className="muted-text">{o.label}</span></span></td>
               <td>{r.ip || '—'}</td>
               <td><small className="muted-text" title={r.userAgent || ''}>{(r.userAgent || '—').slice(0, 40)}</small></td>
             </tr>); })}</tbody></table></div>
@@ -1406,18 +1405,17 @@ function AuditTrailView() {
   }
 
   return <section className="panel full-panel">
-    <div className="panel-heading">
-      <div><p className="panel-kicker">RASTREABILIDADE</p><h2>Trilha de auditoria</h2>
-        <p className="panel-subtitle">{`${total} ação(ões) registrada(s)`}</p></div>
+    <div className="audit-toolbar">
+      <span className="audit-count"><strong>{total}</strong> ação(ões) registrada(s)</span>
+      <form className="audit-filter-bar" onSubmit={applyFilters}>
+        <div className="audit-field"><label>Usuário</label>
+          <input value={userName} onChange={(ev) => setUserName(ev.target.value)} placeholder="nome de usuário" /></div>
+        <div className="audit-field"><label>Ação</label>
+          <input value={action} onChange={(ev) => setAction(ev.target.value)} placeholder="ex: Criou, Excluiu, Importou" /></div>
+        <button className="primary-button" type="submit">Filtrar</button>
+      </form>
     </div>
-    <form className="filter-bar" onSubmit={applyFilters} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>Usuário
-        <input value={userName} onChange={(ev) => setUserName(ev.target.value)} placeholder="nome de usuário" /></label>
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>Ação
-        <input value={action} onChange={(ev) => setAction(ev.target.value)} placeholder="ex: Criou, Excluiu, Importou" /></label>
-      <button className="primary-button" type="submit">Filtrar</button>
-    </form>
-    {error && <div className="notice error">{error}</div>}
+    {error && <div className="alert-error"><span>{error}</span></div>}
     {loading ? <div className="table-loading"><span className="spinner" />Carregando...</div>
       : data.length === 0 ? <EmptyState message="Nenhuma ação registrada com os filtros atuais." />
       : <>
@@ -1426,8 +1424,8 @@ function AuditTrailView() {
             <tr key={r.id}>
               <td>{formatDate(r.createdAt, true)}</td>
               <td><strong>{r.userName || '—'}</strong></td>
-              <td>{r.action}</td>
-              <td><small className="table-id">{r.method} {r.path}</small></td>
+              <td><strong>{r.action}</strong></td>
+              <td><small className="mono-cell">{r.method} {r.path}</small></td>
               <td><small className="muted-text" title={r.summary || ''}>{(r.summary || '—').slice(0, 60)}</small></td>
               <td>{r.ip || '—'}</td>
             </tr>))}</tbody></table></div>
@@ -1439,9 +1437,9 @@ function AuditTrailView() {
 /** Paginação simples reutilizável. */
 function Pager({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
   if (totalPages <= 1) return null;
-  return <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', marginTop: 12 }}>
+  return <div className="audit-pager">
     <button className="secondary-button" disabled={page <= 1} onClick={() => onChange(page - 1)}>← Anterior</button>
-    <span className="muted-text" style={{ fontSize: 12 }}>Página {page} de {totalPages}</span>
+    <span>Página {page} de {totalPages}</span>
     <button className="secondary-button" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>Próxima →</button>
   </div>;
 }
