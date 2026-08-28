@@ -65,7 +65,7 @@
 #>
 
 param(
-    [string]$ApiBaseUrl = "http://127.0.0.1:5104",
+    [string]$ApiBaseUrl = "http://127.0.0.1:5088",
     [Parameter(Mandatory = $true)][string]$EventId,
     [string]$Username = "admin",
     [string]$Password = "Admin@1234",

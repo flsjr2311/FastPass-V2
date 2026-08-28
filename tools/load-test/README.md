@@ -16,7 +16,7 @@ Padrão: 12 minutos, 6 validações simultâneas por onda (~1 onda/segundo), 10%
 | Parâmetro | Padrão | Descrição |
 |---|---|---|
 | `-EventId` | *(obrigatório)* | GUID do evento a testar |
-| `-ApiBaseUrl` | `http://127.0.0.1:5104` | URL base da API |
+| `-ApiBaseUrl` | `http://127.0.0.1:5088` | URL base da API |
 | `-DurationMinutes` | `12` | Duração total do teste |
 | `-Concurrency` | `6` | Validações simultâneas por onda |
 | `-ErrorRatePercent` | `10` | % de tentativas que devem falhar de propósito |
