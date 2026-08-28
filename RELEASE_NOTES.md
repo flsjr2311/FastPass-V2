@@ -27,8 +27,16 @@ Rodada de correções, refinamentos operacionais e limpeza estrutural preparando
 
 #### Ingressos
 - Novo campo de **lote** (`batch_name`) no ticket, lido da planilha de importação (coluna configurável ou valor padrão).
-- Tela de Tickets com **busca por código**, **filtro por status** e **alteração de status** direto na tabela (ativo/cancelado/revogado) — requer permissão `ticket.status`.
+- Tela de Tickets com **busca por código**, **filtro por status** e **alteração de status** direto na tabela (ativo/cancelado/revogado) — requer permissão `ticket.status`. A alteração de status só aparece para quem tem a permissão (Administrador e Gestor Operacional).
 - Colunas de **Setor** e **Lote** na listagem de tickets.
+
+#### Validação manual
+- Nova tela **"Validação Manual"** para o operador liberar acesso em exceções (backstage, convidados, falha de catraca).
+- Permite escolher a **portaria** e, opcionalmente, o **setor** de validação.
+- Contabiliza normalmente na portaria/setor escolhidos, mas grava o canal como `Manual` para diferenciar das validações automáticas.
+- Novo canal `Manual` e endpoint `/api/access/manual/validate` (requer sessão + `acesso.validar`).
+- A auditoria exibe um selo **✋ Manual** nas validações feitas dessa forma.
+- Disponível para Administrador, Gestor Operacional e Operador de Portaria.
 
 #### Relatórios e auditoria
 - Correção do cálculo de **cobertura por setor** (não passa mais de 100%): conta tickets que pertencem ao setor, não tentativas na portaria.

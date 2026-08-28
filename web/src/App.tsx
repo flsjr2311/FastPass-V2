@@ -41,6 +41,7 @@ const screenLabels: Record<Screen, { label: string; icon: string; description: s
   clients:       { label: 'Clientes',            icon: '◧', description: 'Organizadores e clientes vinculados aos eventos', group: 'cadastro' },
   events:        { label: 'Eventos',             icon: '◈', description: 'Agenda e configuração de eventos',                group: 'cadastro' },
   configuration: { label: 'Portarias e Setores', icon: '⚙', description: 'Portarias, setores e regras de circulação',       group: 'operacao' },
+  manualValidation: { label: 'Validação Manual', icon: '✋', description: 'Liberação manual de acesso (backstage, exceções, falhas)', group: 'operacao' },
   tickets:       { label: 'Tickets',             icon: '▣', description: 'Ingressos emitidos e utilização',                 group: 'operacao' },
   reports:       { label: 'Relatórios',          icon: '◈', description: 'Métricas, cobertura e análise de rejeições',      group: 'operacao' },
   audit:         { label: 'Auditoria de acessos', icon: '◌', description: 'Histórico de tentativas de validação de acesso', group: 'logs' },
@@ -98,7 +99,7 @@ function EmptyState({ message }: { message: string }) {
 
 const navGroups: { key: string; label: string; items: Screen[] }[] = [
   { key: 'cadastro', label: 'CADASTRO', items: ['clients', 'events'] },
-  { key: 'operacao', label: 'OPERAÇÃO', items: ['configuration', 'tickets', 'reports'] },
+  { key: 'operacao', label: 'OPERAÇÃO', items: ['configuration', 'manualValidation', 'tickets', 'reports'] },
   { key: 'logs', label: 'LOGS', items: ['audit', 'importLogs'] },
   { key: 'admin', label: 'ADMINISTRAÇÃO', items: ['import', 'users', 'messages'] },
 ];
@@ -226,7 +227,7 @@ function App() {
                   <span>{group.label}</span>
                   <span className={`nav-group-caret${isOpen ? ' open' : ''}`}>▾</span>
                 </button>
-                {isOpen && group.items.map((item) => (
+                {isOpen && group.items.filter((item) => item !== 'manualValidation' || session.permissions.includes('acesso.validar')).map((item) => (
                   <button key={item} className={screen === item ? 'nav-item active' : 'nav-item'} onClick={() => goToScreen(item)}>
                     <span className="nav-icon">{screenLabels[item].icon}</span><span>{screenLabels[item].label}</span>
                     {item === 'audit' && attempts?.total ? <em>{attempts.total}</em> : null}
@@ -255,7 +256,8 @@ function App() {
             <>
               {screen === 'dashboard' && <Dashboard selectedEvent={selectedEvent} onOpen={goToScreen} />}
               {screen === 'events' && <EventsView events={events} onCreated={(created) => { setEvents((currentEvents) => [created, ...currentEvents]); setSelectedEventId(created.id); }} />}
-              {screen === 'tickets' && <TicketsView tickets={tickets} loading={ticketsLoading} hasEvent={Boolean(selectedEvent)} eventId={selectedEventId} />}
+              {screen === 'tickets' && <TicketsView tickets={tickets} loading={ticketsLoading} hasEvent={Boolean(selectedEvent)} eventId={selectedEventId} canManageStatus={session.permissions.includes('ticket.status')} />}
+              {screen === 'manualValidation' && <ManualValidationView eventId={selectedEventId} hasEvent={Boolean(selectedEvent)} />}
               {screen === 'audit' && <AuditView attempts={attempts} loading={operationalLoading} />}
               {screen === 'configuration' && <ConfigurationView eventId={selectedEventId} />}
               {screen === 'messages' && <MessagesView eventId={selectedEventId} />}
@@ -698,7 +700,7 @@ function EventAdminPanel({ eventId, eventName }: { eventId: string; eventName: s
   </div>;
 }
 
-function TicketsView({ tickets: _initialTickets, loading: _initialLoading, hasEvent, eventId }: { tickets: TicketView[]; loading: boolean; hasEvent: boolean; eventId: string }) {
+function TicketsView({ tickets: _initialTickets, loading: _initialLoading, hasEvent, eventId, canManageStatus }: { tickets: TicketView[]; loading: boolean; hasEvent: boolean; eventId: string; canManageStatus: boolean }) {
   const [summary, setSummary] = useState<TicketSummaryView | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [tickets, setTickets] = useState<TicketView[]>(_initialTickets);
@@ -770,7 +772,7 @@ function TicketsView({ tickets: _initialTickets, loading: _initialLoading, hasEv
         <button className="primary-button" type="submit" disabled={ticketsLoading}>{ticketsLoading ? 'Buscando...' : 'Buscar'}</button>
         {(searchCode || filterStatus) && <button className="secondary-button" type="button" onClick={() => { setSearchCode(''); setFilterStatus(''); setTimeout(loadTickets, 0); }}>Limpar</button>}
       </form>
-      {ticketsLoading ? <div className="table-loading"><span className="spinner" />Carregando tickets...</div> : tickets.length === 0 ? <EmptyState message="Nenhum ticket encontrado com os filtros informados." /> : <div className="table-scroll"><table><thead><tr><th>Ticket</th><th>Código</th><th>Setor</th><th>Lote</th><th>Entradas</th><th>Quota</th><th>Status</th><th>Ações</th></tr></thead><tbody>{tickets.slice(0, 200).map((ticket) => <tr key={ticket.id}><td><strong>{ticket.externalId || '—'}</strong><small className="table-id">{ticket.id.slice(0, 8)}</small></td><td><code>{ticket.code}</code></td><td>{ticket.sectorName || '—'}</td><td>{ticket.batchName || '—'}</td><td><div className="usage-cell"><span>{ticket.entriesUsed ?? 0}</span><div className="mini-progress"><i style={{ width: `${Math.min(((ticket.entriesUsed ?? 0) / Math.max(ticket.maximumEntries ?? 1, 1)) * 100, 100)}%` }} /></div></div></td><td>{ticket.maximumEntries ?? 1}</td><td><StatusBadge value={ticket.status} /></td><td><select disabled={statusChanging === ticket.id} value={ticket.status} onChange={(e) => handleStatusChange(ticket.id, e.target.value)}><option value="active">Ativo</option><option value="cancelled">Cancelado</option><option value="revoked">Revogado</option></select></td></tr>)}</tbody></table></div>}
+      {ticketsLoading ? <div className="table-loading"><span className="spinner" />Carregando tickets...</div> : tickets.length === 0 ? <EmptyState message="Nenhum ticket encontrado com os filtros informados." /> : <div className="table-scroll"><table><thead><tr><th>Ticket</th><th>Código</th><th>Setor</th><th>Lote</th><th>Entradas</th><th>Quota</th><th>Status</th>{canManageStatus && <th>Ações</th>}</tr></thead><tbody>{tickets.slice(0, 200).map((ticket) => <tr key={ticket.id}><td><strong>{ticket.externalId || '—'}</strong><small className="table-id">{ticket.id.slice(0, 8)}</small></td><td><code>{ticket.code}</code></td><td>{ticket.sectorName || '—'}</td><td>{ticket.batchName || '—'}</td><td><div className="usage-cell"><span>{ticket.entriesUsed ?? 0}</span><div className="mini-progress"><i style={{ width: `${Math.min(((ticket.entriesUsed ?? 0) / Math.max(ticket.maximumEntries ?? 1, 1)) * 100, 100)}%` }} /></div></div></td><td>{ticket.maximumEntries ?? 1}</td><td><StatusBadge value={ticket.status} /></td>{canManageStatus && <td><select disabled={statusChanging === ticket.id} value={ticket.status} onChange={(e) => handleStatusChange(ticket.id, e.target.value)}><option value="active">Ativo</option><option value="cancelled">Cancelado</option><option value="revoked">Revogado</option></select></td>}</tr>)}</tbody></table></div>}
       {tickets.length > 200 && <p className="panel-subtitle" style={{ padding: '8px 16px' }}>Mostrando 200 de {tickets.length} tickets. Use os filtros para refinar.</p>}
     </section>
   </>;
@@ -1237,7 +1239,94 @@ function AuditView({ attempts, loading }: { attempts: AttemptPage | null; loadin
 
 function AttemptTable({ attempts, expanded = false }: { attempts: AttemptPage['data']; expanded?: boolean }) {
   if (attempts.length === 0) return <EmptyState message="Ainda não há tentativas de acesso registradas." />;
-  return <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Credencial</th><th>Portaria / setor</th><th>Setor do ingresso</th><th>Direção</th><th>Decisão</th><th>{expanded ? 'Motivo' : 'Status'}</th></tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.attemptId}><td>{formatDate(attempt.requestedAt || attempt.createdAt, true)}</td><td><strong>{attempt.credentialType === 'StaffBadge' ? attempt.staffName || 'Crachá de usuário' : attempt.ticketExternalId || 'Ingresso'}</strong><small className="table-id">{attempt.credentialCodeMasked}</small></td><td><strong>{attempt.gateName || 'Portaria não informada'}</strong><small>{attempt.sectorName || 'Setor não informado'}</small></td><td>{attempt.ticketSectorName || '—'}</td><td><span className="direction">{attempt.direction === 'Entry' ? '↓ Entrada' : '↑ Saída'}</span></td><td><StatusBadge value={attempt.decision} /></td><td>{expanded ? attempt.reason || '—' : <span className="muted-text">{attempt.status}</span>}</td></tr>)}</tbody></table></div>;
+  return <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Credencial</th><th>Portaria / setor</th><th>Setor do ingresso</th><th>Direção</th><th>Decisão</th><th>{expanded ? 'Motivo' : 'Status'}</th></tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.attemptId}><td>{formatDate(attempt.requestedAt || attempt.createdAt, true)}</td><td><strong>{attempt.credentialType === 'StaffBadge' ? attempt.staffName || 'Crachá de usuário' : attempt.ticketExternalId || 'Ingresso'}</strong>{attempt.channel === 'Manual' && <span className="message-badge customized" style={{ marginLeft: 6, fontSize: 9 }}>✋ Manual</span>}<small className="table-id">{attempt.credentialCodeMasked}</small></td><td><strong>{attempt.gateName || 'Portaria não informada'}</strong><small>{attempt.sectorName || 'Setor não informado'}</small></td><td>{attempt.ticketSectorName || '—'}</td><td><span className="direction">{attempt.direction === 'Entry' ? '↓ Entrada' : '↑ Saída'}</span></td><td><StatusBadge value={attempt.decision} /></td><td>{expanded ? attempt.reason || '—' : <span className="muted-text">{attempt.status}</span>}</td></tr>)}</tbody></table></div>;
+}
+
+function ManualValidationView({ eventId, hasEvent }: { eventId: string; hasEvent: boolean }) {
+  const [gates, setGates] = useState<GateView[]>([]);
+  const [sectors, setSectors] = useState<SectorView[]>([]);
+  const [gateSectors, setGateSectors] = useState<GateSectorView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [gateId, setGateId] = useState('');
+  const [sectorId, setSectorId] = useState('');
+  const [code, setCode] = useState('');
+  const [validating, setValidating] = useState(false);
+  const [result, setResult] = useState<import('./types').AccessValidationResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!eventId) { setLoading(false); return; }
+    setLoading(true);
+    Promise.all([api.listGates(eventId), api.listSectors(eventId), api.listGateSectors(eventId)])
+      .then(([g, s, gs]) => { setGates(g); setSectors(s); setGateSectors(gs); })
+      .catch((r: unknown) => setError(r instanceof Error ? r.message : 'Erro ao carregar portarias/setores.'))
+      .finally(() => setLoading(false));
+  }, [eventId]);
+
+  // Setores disponíveis para a portaria escolhida (via matriz)
+  const sectorsForGate = gateId
+    ? sectors.filter(s => gateSectors.some(gs => gs.gateId === gateId && gs.sectorId === s.id && gs.active))
+    : [];
+
+  async function handleValidate(e: FormEvent) {
+    e.preventDefault();
+    if (!code.trim() || !gateId) { setError('Informe o código e a portaria.'); return; }
+    setValidating(true); setError(null); setResult(null);
+    try {
+      const r = await api.validateManual({
+        credentialCode: code.trim(),
+        eventId,
+        gateId,
+        sectorId: sectorId || null,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      setResult(r);
+      setCode('');
+    } catch (r: unknown) {
+      setError(r instanceof Error ? r.message : 'Erro na validação.');
+    } finally {
+      setValidating(false);
+    }
+  }
+
+  if (!hasEvent) return <section className="panel full-panel"><EmptyState message="Selecione um evento para validar manualmente." /></section>;
+  if (loading) return <section className="panel full-panel"><div className="loading-panel"><span className="spinner" />Carregando portarias...</div></section>;
+
+  return <section className="panel full-panel">
+    <div className="panel-heading"><div><p className="panel-kicker">OPERAÇÃO DE PORTARIA</p><h2>Validação Manual</h2><p className="panel-subtitle">Use para liberar acesso em exceções (backstage, convidados, falha de catraca). Registrado como validação manual e contabilizado na portaria/setor escolhidos.</p></div></div>
+    {error && <div className="alert-error inline-alert"><strong>Não foi possível validar.</strong><span>{error}</span></div>}
+    <form className="event-create-form" onSubmit={handleValidate}>
+      <div className="form-row form-row-three">
+        <label>Portaria
+          <select value={gateId} onChange={(e) => { setGateId(e.target.value); setSectorId(''); }} disabled={validating}>
+            <option value="">Selecione a portaria</option>
+            {gates.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </label>
+        <label>Setor (opcional)
+          <select value={sectorId} onChange={(e) => setSectorId(e.target.value)} disabled={validating || !gateId}>
+            <option value="">— Automático (setor do ingresso) —</option>
+            {sectorsForGate.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </label>
+        <label>Código do ingresso / crachá
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Escaneie ou digite o código" disabled={validating} style={{ fontFamily: 'monospace' }} autoFocus />
+        </label>
+      </div>
+      <button className="primary-button form-submit" type="submit" disabled={validating || !gateId || !code.trim()}>
+        {validating ? 'Validando...' : '✋ Validar manualmente'}
+      </button>
+    </form>
+    {result && (
+      <div className={`manual-result ${result.approved ? 'approved' : 'rejected'}`} style={{ marginTop: 16, padding: 20, borderRadius: 12, background: result.approved ? 'linear-gradient(135deg,#1e9e6a,#25c07f)' : 'linear-gradient(135deg,#eb3349,#f45c43)', color: '#fff' }}>
+        <strong style={{ fontSize: 24, display: 'block' }}>{result.approved ? '✓ ACESSO LIBERADO' : '✕ ACESSO NEGADO'}</strong>
+        <span style={{ display: 'block', marginTop: 6 }}>{result.reason || (result.approved ? 'Validação manual registrada.' : '')}</span>
+        <small style={{ display: 'block', marginTop: 8, opacity: 0.85 }}>
+          {result.direction === 'Entry' ? 'Entrada' : 'Saída'} · {result.credentialType === 'StaffBadge' ? 'Crachá de usuário' : 'Ingresso'} · Validação manual
+        </small>
+      </div>
+    )}
+  </section>;
 }
 
 function ClientsView() {

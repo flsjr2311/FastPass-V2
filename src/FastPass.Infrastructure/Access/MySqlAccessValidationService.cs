@@ -940,7 +940,7 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             return result == AccessChannel.Api ? AccessChannel.Turnstile : result;
         }
 
-        throw new ArgumentException("Channel deve ser App ou Turnstile.");
+        throw new ArgumentException("Channel deve ser App, Turnstile ou Manual.");
     }
 
     private static AccessDirection ParseDirection(string? direction)

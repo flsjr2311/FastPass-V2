@@ -652,6 +652,22 @@ app.MapPost("/api/access/validate", async (ValidateAccessCommand command, IAcces
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
+// Validação MANUAL pelo operador (backstage, exceções, falhas de catraca).
+// Exige sessão autenticada + permissão acesso.validar. Grava channel='Manual'
+// para diferenciar das validações automáticas de app/catraca.
+app.MapPost("/api/access/manual/validate", async (
+    ValidateAccessCommand command, IAccessValidationService svc, HttpContext ctx, CancellationToken ct) =>
+{
+    if (ctx.RequirePermission("acesso.validar") is { } e) return e;
+    try
+    {
+        var result = await svc.ValidateAsync(
+            command with { Channel = "Manual", DeviceId = null }, ct);
+        return Results.Ok(result);
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Importação de ingressos  (requer ticket.importar)
 // ══════════════════════════════════════════════════════════════════════════════

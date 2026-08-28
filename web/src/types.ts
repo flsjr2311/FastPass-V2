@@ -1,4 +1,4 @@
-export type Screen = 'dashboard' | 'events' | 'tickets' | 'audit' | 'configuration' | 'messages' | 'users' | 'import' | 'importLogs' | 'reports' | 'admin' | 'clients';
+export type Screen = 'dashboard' | 'events' | 'tickets' | 'audit' | 'configuration' | 'messages' | 'users' | 'import' | 'importLogs' | 'reports' | 'admin' | 'clients' | 'manualValidation';
 
 export interface VenueView {
   id: string;

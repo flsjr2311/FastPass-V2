@@ -153,6 +153,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  validateManual: (payload: AccessValidationPayload) =>
+    request<AccessValidationResult>('/api/access/manual/validate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   listAttempts: (eventId: string) => request<AttemptPage>(`/api/events/${eventId}/access-attempts?page=1&pageSize=20`),
   getSummary: (eventId: string) => request<AttemptSummary>(`/api/events/${eventId}/access-attempts/summary`),
   listAccessMessages: (eventId: string) => request<AccessMessageView[]>(`/api/events/${eventId}/access-messages`),

@@ -102,6 +102,12 @@ O FastPass V2 gerencia todo o ciclo de vida de controle de acesso em eventos: de
 - Validado direto pela tabela de usuários, no mesmo fluxo dos tickets
 - Autorização pelo escopo de eventos/portarias do usuário
 
+### Validação Manual
+- Tela para o operador liberar acesso em exceções (backstage, convidados, falha de catraca)
+- Escolha de portaria e setor de validação
+- Contabiliza na portaria/setor e marca o registro como `Manual` (canal), visível na auditoria
+- Restrita a Administrador, Gestor Operacional e Operador de Portaria (`acesso.validar`)
+
 ### Relatórios
 - Histórico de tentativas de acesso (filtros, paginação)
 - Sumário de validações
@@ -208,6 +214,7 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 |--------|------|-----------|
 | POST | `/api/access/app/validate` | Validação via App |
 | POST | `/api/access/turnstile/validate` | Validação via Catraca |
+| POST | `/api/access/manual/validate` | Validação manual pelo operador (requer sessão + `acesso.validar`) |
 | POST | `/api/access/validate` | Validação genérica |
 
 ## Pendências e Roadmap
@@ -219,7 +226,8 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 - [x] Crachá de acesso físico validado direto por usuário (staff removido)
 - [x] Códigos legíveis (evento/portaria/setor)
 - [x] Lote (batch_name) no ticket via CSV
-- [x] Busca/filtro/alteração de status na tela de tickets
+- [x] Busca/filtro/alteração de status na tela de tickets (restrita por permissão)
+- [x] Validação manual pelo operador (canal Manual, marcado na auditoria)
 
 ### Prioridade Alta
 - [ ] **Integração com catracas Vcom** — comunicação serial/TCP com catracas USR-Vcom

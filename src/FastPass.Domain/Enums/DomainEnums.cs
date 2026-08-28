@@ -60,7 +60,8 @@ public enum AccessChannel
 {
     App,
     Turnstile,
-    Api
+    Api,
+    Manual
 }
 
 public enum GateOperationMode
