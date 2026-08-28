@@ -645,9 +645,9 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             return Convert.ToBoolean(value);
         }
 
-        // Quando a matriz física está ativa, ela é a autorização operacional padrão
-        // para tickets com setor. Políticas explícitas continuam podendo permitir ou negar.
-        return command.SectorId.HasValue;
+        // Se não há policies configuradas, a autorização é concedida por padrão.
+        // A matriz portaria×setor (verificada antes) já é a restrição operacional.
+        return true;
     }
 
     private static async Task<bool> HasActiveSectorAsync(

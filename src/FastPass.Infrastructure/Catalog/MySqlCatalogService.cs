@@ -1370,16 +1370,18 @@ public sealed class MySqlCatalogService : ICatalogService
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, batch_id, ticket_type_id, external_id, code, maximum_uses, uses,
-                   maximum_entries, entries_used, people_inside, status, metadata_json, created_at
-            FROM fp_tickets
-            WHERE event_id = @event_id
-              AND (@ticket_type_id IS NULL OR ticket_type_id = @ticket_type_id)
-              AND (@batch_id IS NULL OR batch_id = @batch_id)
-              AND (@external_id IS NULL OR external_id = @external_id)
-              AND (@code IS NULL OR code = @code)
-              AND (@status IS NULL OR status = @status)
-            ORDER BY created_at, external_id;
+            SELECT t.id, t.batch_id, t.ticket_type_id, t.external_id, t.code, t.maximum_uses, t.uses,
+                   t.maximum_entries, t.entries_used, t.people_inside, t.status, t.metadata_json, t.created_at,
+                   t.sector_id, s.name
+            FROM fp_tickets t
+            LEFT JOIN fp_sectors s ON s.id = t.sector_id
+            WHERE t.event_id = @event_id
+              AND (@ticket_type_id IS NULL OR t.ticket_type_id = @ticket_type_id)
+              AND (@batch_id IS NULL OR t.batch_id = @batch_id)
+              AND (@external_id IS NULL OR t.external_id = @external_id)
+              AND (@code IS NULL OR t.code = @code)
+              AND (@status IS NULL OR t.status = @status)
+            ORDER BY t.created_at, t.external_id;
             """;
         command.Parameters.AddWithValue("@event_id", eventId.ToString());
         command.Parameters.AddWithValue("@ticket_type_id", (object?)ticketTypeId?.ToString() ?? DBNull.Value);
@@ -1406,7 +1408,9 @@ public sealed class MySqlCatalogService : ICatalogService
                 ReadDateTimeOffset(reader, 12),
                 Convert.ToInt32(reader.GetValue(7)),
                 Convert.ToInt32(reader.GetValue(8)),
-                Convert.ToInt32(reader.GetValue(9))));
+                Convert.ToInt32(reader.GetValue(9)),
+                ReadNullableGuid(reader, 13),
+                reader.IsDBNull(14) ? null : reader.GetString(14)));
         }
 
         return result;

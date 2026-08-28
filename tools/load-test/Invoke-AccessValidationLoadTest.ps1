@@ -4,26 +4,23 @@
 
 .DESCRIPTION
     Dispara validações de acesso concorrentes contra a API FastPass (POST /api/access/app/validate),
-    simulando o fluxo real de uma portaria: a maioria das tentativas é uma aprovação válida, e uma
-    fração configurável (padrão 10%) simula erros esperados de operação:
-      - Ingresso já usado (reenvia um código que a própria sessão de teste já aprovou)
-      - Ingresso cancelado (usa um ticket com status "cancelled" já existente no evento)
-      - Ingresso inexistente / de outro evento (gera um código aleatório que não existe)
-      - Portaria sem autorização para o setor (usa uma combinação gate/sector fora da matriz)
+    simulando o fluxo real de uma portaria com inteligência:
+      - Cada ticket é enviado para a portaria correta (baseado no setor do ticket e na matriz portaria×setor)
+      - Tickets sem setor são distribuídos aleatoriamente entre portarias
+      - Tickets são consumidos em ordem e não são reenviados até esgotar o pool
+      - Uma fração configurável (padrão 10%) simula erros esperados de operação:
+        * Ingresso já usado (reenvia um código que já aprovou — testa limite de entradas)
+        * Ingresso cancelado (usa um ticket com status "cancelled")
+        * Ingresso inexistente (gera um código aleatório)
+        * Portaria errada (envia ticket para portaria de outro setor)
 
-    Ideal para deixar rodando em background enquanto se acompanha o Dashboard e os Relatórios
-    (telas "Dashboard" e "Relatórios" do FastPass V2 Console) em tempo real.
-
-    Roda inteiramente em PowerShell 5.1 (usa System.Net.Http.HttpClient com Task.WhenAll para
-    concorrência real, sem depender de ForEach-Object -Parallel do PowerShell 7).
+    Ideal para deixar rodando em background enquanto se acompanha o Dashboard e os Relatórios.
 
 .PARAMETER ApiBaseUrl
-    URL base da API FastPass. Padrão: http://127.0.0.1:5104
+    URL base da API FastPass. Padrão: http://127.0.0.1:5088
 
 .PARAMETER EventId
     GUID do evento cujos ingressos serão usados no teste. Obrigatório.
-    ATENÇÃO: o script consome (marca como usados) tickets ATIVOS reais do evento informado.
-    Prefira rodar contra um evento de teste/homologação, não um evento de produção em operação.
 
 .PARAMETER Username
     Usuário para login na API. Padrão: admin
@@ -41,27 +38,16 @@
     Percentual aproximado de tentativas que devem falhar de propósito (0-100). Padrão: 10
 
 .PARAMETER WaveDelayMs
-    Pausa entre ondas de requisições concorrentes, em milissegundos. Controla o ritmo
-    (requests/segundo) do teste. Padrão: 1000
+    Pausa entre ondas de requisições concorrentes, em milissegundos. Padrão: 1000
 
 .EXAMPLE
     .\Invoke-AccessValidationLoadTest.ps1 -EventId "ae7d5cdd-afd7-4b3c-98cc-10b2adca3589"
 
-    Roda o teste padrão: 12 minutos, 6 validações simultâneas por onda, 10% de erro.
-
-.EXAMPLE
-    .\Invoke-AccessValidationLoadTest.ps1 -EventId "ae7d5cdd-afd7-4b3c-98cc-10b2adca3589" -DurationMinutes 15 -Concurrency 8 -ErrorRatePercent 15
-
-    Roda 15 minutos com 8 validações simultâneas e 15% de taxa de erro.
-
 .NOTES
-    Salvo em fastpass_moderno/tools/load-test para reuso em futuras sessões.
-    Pré-requisitos antes de rodar:
+    Pré-requisitos:
       - API FastPass rodando e acessível em -ApiBaseUrl
-      - O evento informado deve ter ao menos 1 ticket ativo e ao menos 1 associação
-        ativa de portaria x setor (direção Entry) cadastrada em Configuração > Portarias e Setores.
-    Para interromper antes do tempo, use Ctrl+C — o resumo parcial não é impresso nesse caso
-    (rode em uma janela dedicada ou redirecione a saída para um arquivo com Tee-Object se quiser log).
+      - O evento deve ter ao menos 1 ticket ativo
+      - O evento deve ter ao menos 1 associação portaria×setor ativa (direção Entry)
 #>
 
 param(
@@ -78,7 +64,7 @@ param(
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Net.Http
 
-# ── HttpClient com cookie container compartilhado (mantém a sessão entre chamadas) ──
+# ── HttpClient com cookie container compartilhado ────────────────────────────
 $cookieContainer = New-Object System.Net.CookieContainer
 $handler = New-Object System.Net.Http.HttpClientHandler
 $handler.CookieContainer = $cookieContainer
@@ -95,21 +81,17 @@ function Invoke-JsonPost {
 }
 
 function Invoke-JsonGet {
-    # Sempre devolve um array (mesmo com 0 ou 1 item), sem o efeito de aninhamento que
-    # ocorre quando o chamador envolve a invocação com @(). Ver comentário no ponto de uso.
     param([string]$Path)
     $resp = $client.GetAsync("$ApiBaseUrl$Path").GetAwaiter().GetResult()
     $body = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
     if (-not $resp.IsSuccessStatusCode) { throw "GET $Path falhou: $($resp.StatusCode) - $body" }
     $parsed = ConvertFrom-Json $body
-    if ($null -eq $parsed) { return [Array]::CreateInstance([object], 0) }
+    if ($null -eq $parsed) { return @() }
     if ($parsed -is [Array]) { return $parsed }
-    $arr = [Array]::CreateInstance([object], 1)
-    $arr[0] = $parsed
-    return $arr
+    return @($parsed)
 }
 
-# ── Login ────────────────────────────────────────────────────────────────────────
+# ── Login ────────────────────────────────────────────────────────────────────
 Write-Host "Autenticando como '$Username'..."
 $loginResult = Invoke-JsonPost "/api/auth/login" @{ username = $Username; password = $Password }
 if ($loginResult.StatusCode -ne 200) {
@@ -117,11 +99,9 @@ if ($loginResult.StatusCode -ne 200) {
 }
 Write-Host "Login OK."
 
-# ── Coleta de dados do evento ────────────────────────────────────────────────────
+# ── Coleta de dados do evento ────────────────────────────────────────────────
 Write-Host "Carregando tickets, portarias e matriz do evento $EventId..."
-# IMPORTANTE: NAO envolver a chamada de Invoke-JsonGet com @() aqui -- quando a função
-# devolve um array grande pelo pipeline, @(chamada-de-funcao) aninha o array (Object[][]),
-# fazendo .Count reportar 1 em vez do total real. Atribuição direta preserva o array corretamente.
+
 $tickets = Invoke-JsonGet "/api/events/$EventId/tickets"
 $gates = Invoke-JsonGet "/api/events/$EventId/gates"
 $gateSectors = Invoke-JsonGet "/api/events/$EventId/gate-sectors"
@@ -129,35 +109,61 @@ $gateSectors = Invoke-JsonGet "/api/events/$EventId/gate-sectors"
 $activeTickets = @($tickets | Where-Object { $_.status -eq 'active' })
 $cancelledTickets = @($tickets | Where-Object { $_.status -ne 'active' })
 $validPairs = @($gateSectors | Where-Object { $_.active -and $_.direction -eq 'Entry' } | ForEach-Object {
-        [PSCustomObject]@{ GateId = $_.gateId; SectorId = $_.sectorId; GateName = $_.gateName; SectorName = $_.sectorName }
-    })
+    [PSCustomObject]@{ GateId = $_.gateId; SectorId = $_.sectorId; GateName = $_.gateName; SectorName = $_.sectorName }
+})
 
 if ($activeTickets.Count -eq 0) { throw "Nenhum ticket ativo encontrado no evento $EventId." }
-if ($validPairs.Count -eq 0) { throw "Nenhuma associacao portaria x setor ativa (direcao Entry) encontrada. Configure a matriz em Portarias e Setores antes de rodar o teste." }
+if ($validPairs.Count -eq 0) { throw "Nenhuma associacao portaria x setor ativa (direcao Entry) encontrada." }
 
-Write-Host "Tickets ativos: $($activeTickets.Count) | Cancelados: $($cancelledTickets.Count) | Pares portaria x setor validos: $($validPairs.Count)"
+# ── Construir mapa setor → portaria ─────────────────────────────────────────
+$sectorToGate = @{}
+foreach ($pair in $validPairs) {
+    $sectorToGate[$pair.SectorId] = $pair.GateId
+}
+$allGateIds = @($validPairs | ForEach-Object { $_.GateId } | Select-Object -Unique)
 
-# Combinacoes de portaria x setor SEM associacao ativa (usadas para simular "portaria errada")
-$allGateIds = @($gates | ForEach-Object { $_.id })
-$allSectorIds = @($gateSectors | ForEach-Object { $_.sectorId } | Select-Object -Unique)
-$invalidPairs = New-Object System.Collections.Generic.List[Object]
-foreach ($g in $allGateIds) {
-    foreach ($s in $allSectorIds) {
-        $isValid = $validPairs | Where-Object { $_.GateId -eq $g -and $_.SectorId -eq $s }
-        if (-not $isValid) { $invalidPairs.Add([PSCustomObject]@{ GateId = $g; SectorId = $s }) }
+# ── Classificar tickets por setor ────────────────────────────────────────────
+$ticketsWithGate = New-Object System.Collections.Generic.List[Object]
+$ticketsWithoutSector = 0
+$ticketsWithSector = 0
+
+foreach ($t in $activeTickets) {
+    $gateId = $null
+    if ($t.sectorId -and $sectorToGate.ContainsKey($t.sectorId)) {
+        $gateId = $sectorToGate[$t.sectorId]
+        $ticketsWithSector++
+    } else {
+        # Ticket sem setor — distribui para portaria aleatória
+        $gateId = $allGateIds | Get-Random
+        $ticketsWithoutSector++
+    }
+    $ticketsWithGate.Add([PSCustomObject]@{
+        Code = $t.code
+        GateId = $gateId
+        SectorId = $t.sectorId
+        MaxEntries = if ($t.maximumEntries) { $t.maximumEntries } else { 1 }
+    })
+}
+
+Write-Host "Tickets ativos: $($activeTickets.Count) (com setor: $ticketsWithSector, sem setor: $ticketsWithoutSector)"
+Write-Host "Cancelados: $($cancelledTickets.Count) | Portarias: $($allGateIds.Count) | Pares validos: $($validPairs.Count)"
+
+# ── Construir portarias "erradas" para cada setor ────────────────────────────
+$wrongGateForSector = @{}
+foreach ($pair in $validPairs) {
+    $otherGates = @($allGateIds | Where-Object { $_ -ne $pair.GateId })
+    if ($otherGates.Count -gt 0) {
+        $wrongGateForSector[$pair.SectorId] = $otherGates
     }
 }
-if ($invalidPairs.Count -eq 0) {
-    Write-Warning "Nao ha combinacoes de portaria x setor invalidas disponiveis -- o cenario 'portaria errada' sera substituido por 'codigo inexistente'."
-}
 
-# ── Filas de tickets (embaralhadas) ──────────────────────────────────────────────
+# ── Fila de tickets (embaralhada) ────────────────────────────────────────────
 $freshQueue = New-Object System.Collections.Generic.Queue[Object]
-foreach ($t in ($activeTickets | Get-Random -Count $activeTickets.Count)) { $freshQueue.Enqueue($t) }
+foreach ($t in ($ticketsWithGate | Get-Random -Count $ticketsWithGate.Count)) { $freshQueue.Enqueue($t) }
 $usedTickets = New-Object System.Collections.Generic.List[Object]
 $poolExhaustedLogged = $false
 
-# ── Contadores ───────────────────────────────────────────────────────────────────
+# ── Contadores ───────────────────────────────────────────────────────────────
 $stats = @{
     Total = 0; Approved = 0; Rejected = 0; HttpError = 0
     Reasons = @{}
@@ -174,50 +180,58 @@ function Register-Result {
         $parsed = $DecisionJson | ConvertFrom-Json
         if ($parsed.approved) {
             $stats.Approved++
-        }
-        else {
+        } else {
             $stats.Rejected++
             $reason = if ($parsed.reason) { $parsed.reason } else { "Motivo nao informado" }
             if (-not $stats.Reasons.ContainsKey($reason)) { $stats.Reasons[$reason] = 0 }
             $stats.Reasons[$reason]++
         }
-    }
-    catch {
+    } catch {
         $stats.HttpError++
     }
 }
 
 function New-ScenarioPayload {
     $roll = Get-Random -Minimum 0 -Maximum 100
+
     if ($roll -lt $ErrorRatePercent) {
+        # ── Cenário de ERRO (10%) ────────────────────────────────────────────
         $errRoll = Get-Random -Minimum 0 -Maximum 100
-        if ($errRoll -lt 40 -and $usedTickets.Count -gt 0) {
-            # Ingresso ja usado: reenvia um codigo que esta sessao ja aprovou antes
+
+        if ($errRoll -lt 30 -and $usedTickets.Count -gt 0) {
+            # Ingresso já usado — reenvia para mesma portaria (testa limite de entradas)
             $t = $usedTickets | Get-Random
-            $pair = $validPairs | Get-Random
-            return @{ credentialCode = $t.code; eventId = $EventId; gateId = $pair.GateId; sectorId = $pair.SectorId; direction = "Entry"; idempotencyKey = [guid]::NewGuid().ToString(); channel = "App" }
+            return @{ credentialCode = $t.Code; eventId = $EventId; gateId = $t.GateId; idempotencyKey = [guid]::NewGuid().ToString() }
         }
-        elseif ($errRoll -lt 65 -and $cancelledTickets.Count -gt 0) {
-            # Ingresso cancelado (lista negra)
+        elseif ($errRoll -lt 55 -and $cancelledTickets.Count -gt 0) {
+            # Ingresso cancelado
             $t = $cancelledTickets | Get-Random
-            $pair = $validPairs | Get-Random
-            return @{ credentialCode = $t.code; eventId = $EventId; gateId = $pair.GateId; sectorId = $pair.SectorId; direction = "Entry"; idempotencyKey = [guid]::NewGuid().ToString(); channel = "App" }
+            $gateId = $allGateIds | Get-Random
+            return @{ credentialCode = $t.code; eventId = $EventId; gateId = $gateId; idempotencyKey = [guid]::NewGuid().ToString() }
         }
-        elseif ($errRoll -lt 85 -or $invalidPairs.Count -eq 0) {
-            # Codigo inexistente (equivalente a ingresso de outro evento)
+        elseif ($errRoll -lt 75) {
+            # Código inexistente
             $fake = "INVALIDO-" + [guid]::NewGuid().ToString("N").Substring(0, 10).ToUpper()
-            $pair = $validPairs | Get-Random
-            return @{ credentialCode = $fake; eventId = $EventId; gateId = $pair.GateId; sectorId = $pair.SectorId; direction = "Entry"; idempotencyKey = [guid]::NewGuid().ToString(); channel = "App" }
+            $gateId = $allGateIds | Get-Random
+            return @{ credentialCode = $fake; eventId = $EventId; gateId = $gateId; idempotencyKey = [guid]::NewGuid().ToString() }
         }
         else {
-            # Portaria/setor sem associacao ativa na matriz
-            $t = if ($freshQueue.Count -gt 0) { $freshQueue.Peek() } else { $activeTickets | Get-Random }
-            $pair = $invalidPairs | Get-Random
-            return @{ credentialCode = $t.code; eventId = $EventId; gateId = $pair.GateId; sectorId = $pair.SectorId; direction = "Entry"; idempotencyKey = [guid]::NewGuid().ToString(); channel = "App" }
+            # Portaria errada (ticket com setor enviado para portaria de outro setor)
+            $t = if ($freshQueue.Count -gt 0) { $freshQueue.Peek() } else { $ticketsWithGate | Get-Random }
+            if ($t.SectorId -and $wrongGateForSector.ContainsKey($t.SectorId)) {
+                $wrongGate = $wrongGateForSector[$t.SectorId] | Get-Random
+                return @{ credentialCode = $t.Code; eventId = $EventId; gateId = $wrongGate; idempotencyKey = [guid]::NewGuid().ToString() }
+            } else {
+                # Fallback: código inexistente
+                $fake = "INVALIDO-" + [guid]::NewGuid().ToString("N").Substring(0, 10).ToUpper()
+                $gateId = $allGateIds | Get-Random
+                return @{ credentialCode = $fake; eventId = $EventId; gateId = $gateId; idempotencyKey = [guid]::NewGuid().ToString() }
+            }
         }
     }
     else {
-        # Aprovacao valida
+        # ── Cenário de APROVAÇÃO (90%) ───────────────────────────────────────
+        # Pega ticket da fila e envia para a portaria CORRETA
         if ($freshQueue.Count -gt 0) {
             $t = $freshQueue.Dequeue()
             $usedTickets.Add($t)
@@ -225,30 +239,29 @@ function New-ScenarioPayload {
         elseif ($usedTickets.Count -gt 0) {
             if (-not $poolExhaustedLogged) {
                 Write-Host ""
-                Write-Host ">> Pool de tickets novos esgotado -- reciclando tickets ja aprovados (deve gerar 'Limite de entradas atingido' com mais frequencia a partir de agora)." -ForegroundColor Yellow
+                Write-Host ">> Pool de tickets novos esgotado -- reciclando (pode gerar rejeicoes de limite)." -ForegroundColor Yellow
                 Write-Host ""
                 $script:poolExhaustedLogged = $true
             }
             $t = $usedTickets | Get-Random
         }
         else {
-            $t = $activeTickets | Get-Random
+            $t = $ticketsWithGate | Get-Random
         }
-        $pair = $validPairs | Get-Random
-        return @{ credentialCode = $t.code; eventId = $EventId; gateId = $pair.GateId; sectorId = $pair.SectorId; direction = "Entry"; idempotencyKey = [guid]::NewGuid().ToString(); channel = "App" }
+        return @{ credentialCode = $t.Code; eventId = $EventId; gateId = $t.GateId; idempotencyKey = [guid]::NewGuid().ToString() }
     }
 }
 
-# ── Loop principal ───────────────────────────────────────────────────────────────
+# ── Loop principal ───────────────────────────────────────────────────────────
 $startTime = Get-Date
 $endTime = $startTime.AddMinutes($DurationMinutes)
 $waveNumber = 0
 
 Write-Host ""
 Write-Host "=== Iniciando teste de carga ===" -ForegroundColor Cyan
-Write-Host "Duracao: $DurationMinutes min | Concorrencia: $Concurrency por onda | Taxa de erro: ${ErrorRatePercent}% | Intervalo entre ondas: ${WaveDelayMs}ms"
-Write-Host "Acompanhe o Dashboard e os Relatorios do evento no FastPass V2 Console enquanto o teste roda."
-Write-Host "Pressione Ctrl+C para interromper antes do tempo previsto."
+Write-Host "Duracao: $DurationMinutes min | Concorrencia: $Concurrency por onda | Taxa de erro: ${ErrorRatePercent}% | Intervalo: ${WaveDelayMs}ms"
+Write-Host "Acompanhe o Dashboard e os Relatorios do evento no FastPass V2 Console."
+Write-Host "Pressione Ctrl+C para interromper."
 Write-Host ""
 
 while ((Get-Date) -lt $endTime) {
@@ -272,7 +285,8 @@ while ((Get-Date) -lt $endTime) {
 
     if ($waveNumber % 5 -eq 0) {
         $elapsed = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 0)
-        Write-Host ("[{0,4}s] Onda {1,-5} Total: {2,-6} Aprovados: {3,-6} Rejeitados: {4,-6} ErrosHTTP: {5}" -f $elapsed, $waveNumber, $stats.Total, $stats.Approved, $stats.Rejected, $stats.HttpError)
+        $approvalPct = if ($stats.Total -gt 0) { [math]::Round($stats.Approved / $stats.Total * 100, 1) } else { 0 }
+        Write-Host ("[{0,4}s] Onda {1,-5} Total: {2,-6} Aprovados: {3,-6} Rejeitados: {4,-6} Taxa: {5}%" -f $elapsed, $waveNumber, $stats.Total, $stats.Approved, $stats.Rejected, $approvalPct)
     }
 
     $remainingMs = ($endTime - (Get-Date)).TotalMilliseconds
@@ -280,7 +294,7 @@ while ((Get-Date) -lt $endTime) {
     Start-Sleep -Milliseconds ([math]::Min($WaveDelayMs, [math]::Max(0, $remainingMs)))
 }
 
-# ── Resumo final ─────────────────────────────────────────────────────────────────
+# ── Resumo final ─────────────────────────────────────────────────────────────
 $totalElapsedSec = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 1)
 Write-Host ""
 Write-Host "=== Teste concluido em $totalElapsedSec s ($waveNumber ondas) ===" -ForegroundColor Cyan
