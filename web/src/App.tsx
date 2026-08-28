@@ -36,20 +36,20 @@ const emptySummary: AttemptSummary = {
   bySector: [],
 };
 
-const screenLabels: Record<Screen, { label: string; icon: string; description: string; group: 'op' | 'cadastro' | 'operacao' | 'logs' | 'admin' }> = {
-  dashboard:     { label: 'Dashboard',          icon: '⌂', description: 'Visão operacional dos seus eventos',              group: 'op' },
-  clients:       { label: 'Clientes',            icon: '◧', description: 'Organizadores e clientes vinculados aos eventos', group: 'cadastro' },
-  events:        { label: 'Eventos',             icon: '◈', description: 'Agenda e configuração de eventos',                group: 'cadastro' },
-  configuration: { label: 'Portarias e Setores', icon: '⚙', description: 'Portarias, setores e regras de circulação',       group: 'operacao' },
-  manualValidation: { label: 'Validação Manual', icon: '✋', description: 'Liberação manual de acesso (backstage, exceções, falhas)', group: 'operacao' },
-  tickets:       { label: 'Tickets',             icon: '▣', description: 'Ingressos emitidos e utilização',                 group: 'operacao' },
-  reports:       { label: 'Relatórios',          icon: '◈', description: 'Métricas, cobertura e análise de rejeições',      group: 'operacao' },
-  audit:         { label: 'Auditoria de acessos', icon: '◌', description: 'Histórico de tentativas de validação de acesso', group: 'logs' },
-  importLogs:    { label: 'Importações',         icon: '☰', description: 'Histórico de importações, com detalhe por linha', group: 'logs' },
-  import:        { label: 'Importar',            icon: '↑', description: 'Importar ingressos via arquivo CSV',              group: 'admin' },
-  users:         { label: 'Usuários',            icon: '◎', description: 'Usuários, perfis e permissões de acesso',         group: 'admin' },
-  messages:      { label: 'Mensagens',           icon: '✉', description: 'Mensagens exibidas nas liberações e rejeições',   group: 'admin' },
-  admin:         { label: 'Dados do Evento',     icon: '⚠', description: 'Movido para dentro do cadastro de eventos',      group: 'admin' },
+const screenLabels: Record<Screen, { label: string; icon: string; description: string; group: 'op' | 'cadastro' | 'operacao' | 'logs' | 'admin'; perm: string | null }> = {
+  dashboard:     { label: 'Dashboard',          icon: '⌂', description: 'Visão operacional dos seus eventos',              group: 'op',       perm: null },
+  clients:       { label: 'Clientes',            icon: '◧', description: 'Organizadores e clientes vinculados aos eventos', group: 'cadastro', perm: 'cliente.gerenciar' },
+  events:        { label: 'Eventos',             icon: '◈', description: 'Agenda e configuração de eventos',                group: 'cadastro', perm: 'evento.criar' },
+  configuration: { label: 'Portarias e Setores', icon: '⚙', description: 'Portarias, setores e regras de circulação',       group: 'operacao', perm: 'portaria.gerenciar' },
+  manualValidation: { label: 'Validação Manual', icon: '✋', description: 'Liberação manual de acesso (backstage, exceções, falhas)', group: 'operacao', perm: 'acesso.validar' },
+  tickets:       { label: 'Tickets',             icon: '▣', description: 'Ingressos emitidos e utilização',                 group: 'operacao', perm: 'ticket.consultar' },
+  reports:       { label: 'Relatórios',          icon: '◈', description: 'Métricas, cobertura e análise de rejeições',      group: 'operacao', perm: 'relatorio.ler' },
+  audit:         { label: 'Auditoria de acessos', icon: '◌', description: 'Histórico de tentativas de validação de acesso', group: 'logs',     perm: 'acessos.ler' },
+  importLogs:    { label: 'Importações',         icon: '☰', description: 'Histórico de importações, com detalhe por linha', group: 'logs',     perm: 'ticket.importar' },
+  import:        { label: 'Importar',            icon: '↑', description: 'Importar ingressos via arquivo CSV',              group: 'admin',    perm: 'ticket.importar' },
+  users:         { label: 'Usuários',            icon: '◎', description: 'Usuários, perfis e permissões de acesso',         group: 'admin',    perm: 'usuario.gerenciar' },
+  messages:      { label: 'Mensagens',           icon: '✉', description: 'Mensagens exibidas nas liberações e rejeições',   group: 'admin',    perm: 'mensagem.gerenciar' },
+  admin:         { label: 'Dados do Evento',     icon: '⚠', description: 'Movido para dentro do cadastro de eventos',      group: 'admin',    perm: 'evento.excluir' },
 };
 
 function formatDate(value?: string | null, withTime = false) {
@@ -121,6 +121,17 @@ function App() {
   function toggleGroup(key: string) {
     setOpenGroups((current) => ({ ...current, [key]: !current[key] }));
   }
+
+  /** Verifica se a sessão atual tem uma permissão. */
+  const can = (perm: string | null) =>
+    perm === null || (session != null && session.permissions.includes(perm));
+
+  /** Primeira tela que o usuário pode acessar (usada como landing após login). */
+  function firstAllowedScreen(): Screen {
+    if (can(screenLabels.dashboard.perm) && can('relatorio.ler')) return 'dashboard';
+    const order: Screen[] = ['manualValidation', 'tickets', 'reports', 'audit', 'events', 'clients', 'configuration', 'import', 'importLogs', 'users', 'messages'];
+    return order.find((s) => can(screenLabels[s].perm)) ?? 'dashboard';
+  }
   const [events, setEvents] = useState<EventView[]>([]);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [summary, setSummary] = useState<AttemptSummary>(emptySummary);
@@ -144,6 +155,12 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // Ao confirmar a sessão, leva o usuário para a primeira tela que ele pode acessar.
+    if (session) setScreen(firstAllowedScreen());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  useEffect(() => {
     // Só carrega dados quando a sessão estiver confirmada
     if (!session) {
       setLoading(false);
@@ -164,7 +181,7 @@ function App() {
   }, [session]);
 
   useEffect(() => {
-    if (!selectedEventId || !session) {
+    if (!selectedEventId || !session || !session.permissions.includes('relatorio.ler')) {
       setSummary(emptySummary);
       setAttempts(null);
       return;
@@ -186,7 +203,7 @@ function App() {
   }, [selectedEventId, session]);
 
   useEffect(() => {
-    if (screen !== 'tickets' || !selectedEventId || !session) return;
+    if (screen !== 'tickets' || !selectedEventId || !session || !session.permissions.includes('ticket.consultar')) return;
     let cancelled = false;
     setTicketsLoading(true);
     api.listTickets(selectedEventId)
@@ -221,13 +238,18 @@ function App() {
           </button>
           {navGroups.map((group) => {
             const isOpen = openGroups[group.key];
+            const visibleItems = group.items.filter((item) => {
+              const perm = screenLabels[item].perm;
+              return perm === null || session.permissions.includes(perm);
+            });
+            if (visibleItems.length === 0) return null; // esconde grupos sem itens visíveis
             return (
               <div className="nav-group" key={group.key}>
                 <button type="button" className="nav-group-label nav-group-toggle" onClick={() => toggleGroup(group.key)}>
                   <span>{group.label}</span>
                   <span className={`nav-group-caret${isOpen ? ' open' : ''}`}>▾</span>
                 </button>
-                {isOpen && group.items.filter((item) => item !== 'manualValidation' || session.permissions.includes('acesso.validar')).map((item) => (
+                {isOpen && visibleItems.map((item) => (
                   <button key={item} className={screen === item ? 'nav-item active' : 'nav-item'} onClick={() => goToScreen(item)}>
                     <span className="nav-icon">{screenLabels[item].icon}</span><span>{screenLabels[item].label}</span>
                     {item === 'audit' && attempts?.total ? <em>{attempts.total}</em> : null}
@@ -252,7 +274,9 @@ function App() {
             {screen !== 'clients' && screen !== 'users' && <div className="event-selector"><label htmlFor="event-select">Evento selecionado</label><select id="event-select" value={selectedEventId} onChange={(event) => setSelectedEventId(event.target.value)} disabled={loading || events.length === 0}><option value="">Nenhum evento disponível</option>{events.map((event) => <option value={event.id} key={event.id}>{event.name}</option>)}</select></div>}
           </div>
           {error && <div className="alert-error"><strong>Não foi possível atualizar os dados.</strong><span>{error}</span><button onClick={() => window.location.reload()}>Tentar novamente</button></div>}
-          {loading ? <div className="loading-panel"><span className="spinner" />Carregando eventos...</div> : (
+          {loading ? <div className="loading-panel"><span className="spinner" />Carregando eventos...</div> : !can(current.perm) ? (
+            <section className="panel full-panel"><EmptyState message="Você não tem permissão para acessar esta área." /></section>
+          ) : (
             <>
               {screen === 'dashboard' && <Dashboard selectedEvent={selectedEvent} onOpen={goToScreen} />}
               {screen === 'events' && <EventsView events={events} onCreated={(created) => { setEvents((currentEvents) => [created, ...currentEvents]); setSelectedEventId(created.id); }} />}

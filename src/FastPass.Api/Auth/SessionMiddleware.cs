@@ -97,6 +97,17 @@ public static class SessionExtensions
         return null;
     }
 
+    /// <summary>Autoriza se a sessão tiver QUALQUER uma das permissões informadas.</summary>
+    public static IResult? RequireAnyPermission(this HttpContext context, params string[] permissions)
+    {
+        if (!permissions.Any(context.HasPermission))
+        {
+            return Results.Json(new { error = $"É necessária uma das permissões: {string.Join(", ", permissions)}." },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+        return null;
+    }
+
     public static void SetSessionCookie(this HttpContext context, string token, bool rememberMe = false)
     {
         context.Response.Cookies.Append(

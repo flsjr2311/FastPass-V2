@@ -244,7 +244,10 @@ app.MapPost("/api/venues", async (CreateVenueCommand command, ICatalogService sv
 
 app.MapGet("/api/events", async (Guid? venueId, string? status, ICatalogService svc, HttpContext ctx, CancellationToken ct) =>
 {
-    if (ctx.RequirePermission("evento.criar") is { } e) return e;
+    // Leitura ampla: qualquer perfil operacional precisa enxergar a lista de eventos.
+    if (ctx.RequireAnyPermission("evento.criar", "evento.editar", "acesso.validar", "relatorio.ler",
+        "acessos.ler", "ticket.consultar", "portaria.gerenciar", "setor.gerenciar", "mensagem.gerenciar",
+        "ticket.importar") is { } e) return e;
     try { return Results.Ok(await svc.ListEventsAsync(venueId, status, ct)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
@@ -262,7 +265,8 @@ app.MapPost("/api/events", async (CreateEventCommand command, ICatalogService sv
 
 app.MapGet("/api/events/{eventId:guid}/sectors", async (Guid eventId, bool? activeOnly, ICatalogService svc, HttpContext ctx, CancellationToken ct) =>
 {
-    if (ctx.RequirePermission("evento.criar") is { } e) return e;
+    if (ctx.RequireAnyPermission("evento.criar", "evento.editar", "setor.gerenciar", "portaria.gerenciar",
+        "relacao.gerenciar", "acesso.validar", "relatorio.ler", "ticket.consultar", "ticket.importar") is { } e) return e;
     try { return Results.Ok(await svc.ListSectorsAsync(eventId, activeOnly ?? true, ct)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
@@ -293,7 +297,8 @@ app.MapDelete("/api/events/{eventId:guid}/sectors/{sectorId:guid}", async (Guid 
 
 app.MapGet("/api/events/{eventId:guid}/gates", async (Guid eventId, bool? activeOnly, ICatalogService svc, HttpContext ctx, CancellationToken ct) =>
 {
-    if (ctx.RequirePermission("evento.criar") is { } e) return e;
+    if (ctx.RequireAnyPermission("evento.criar", "evento.editar", "portaria.gerenciar", "setor.gerenciar",
+        "relacao.gerenciar", "dispositivo.gerenciar", "acesso.validar", "relatorio.ler", "ticket.consultar") is { } e) return e;
     try { return Results.Ok(await svc.ListGatesAsync(eventId, activeOnly ?? true, ct)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
@@ -358,7 +363,8 @@ app.MapPut("/api/events/{eventId:guid}/gates/{gateId:guid}/devices/{deviceId:gui
 
 app.MapGet("/api/events/{eventId:guid}/gate-sectors", async (Guid eventId, bool? activeOnly, ICatalogService svc, HttpContext ctx, CancellationToken ct) =>
 {
-    if (ctx.RequirePermission("evento.criar") is { } e) return e;
+    if (ctx.RequireAnyPermission("evento.criar", "evento.editar", "portaria.gerenciar", "setor.gerenciar",
+        "relacao.gerenciar", "acesso.validar", "relatorio.ler", "ticket.consultar") is { } e) return e;
     try { return Results.Ok(await svc.ListGateSectorsAsync(eventId, activeOnly ?? true, ct)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
