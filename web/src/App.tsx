@@ -495,7 +495,7 @@ function Dashboard({ selectedEvent, onOpen }: { selectedEvent: EventView | null;
                 <span className="feed-time">{new Date(a.requestedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                 <span className="feed-gate">{a.gateName ?? '—'}</span>
                 <span className="feed-dir">{a.direction === 'Entry' ? '↓' : '↑'}</span>
-                <span className="feed-code">{a.ticketExternalId ?? a.credentialCode}</span>
+                <span className="feed-code">{a.ticketExternalId ?? a.credentialCode}{a.sectorName ? ` (${a.sectorName})` : ''}</span>
                 {a.decision !== 'Approved' && a.reason && <span className="feed-reason">{a.reason}</span>}
               </div>
             ))}

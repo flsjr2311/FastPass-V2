@@ -109,11 +109,11 @@ public sealed class MySqlValidationReportService : IValidationReportService
         await using var rcmd = conn.CreateCommand();
         rcmd.CommandText = BuildBaseQuery("""
             SELECT a.id, a.credential_code, t.external_id, a.decision,
-                   g.name, s.name, a.direction, a.requested_at, a.reason
+                   g.name, ts.name, a.direction, a.requested_at, a.reason
             FROM fp_access_attempts a
             LEFT JOIN fp_tickets t ON t.id = a.ticket_id
             LEFT JOIN fp_gates g ON g.id = a.gate_id
-            LEFT JOIN fp_sectors s ON s.id = a.sector_id
+            LEFT JOIN fp_sectors ts ON ts.id = t.sector_id
             """, filter, eventId, " ORDER BY a.requested_at DESC LIMIT 20");
         AddFilterParams(rcmd, filter, eventId);
         var recent = new List<RecentAttempt>();

@@ -1694,7 +1694,7 @@ public sealed class MySqlCatalogService : ICatalogService
             SELECT
                 COUNT(*) total,
                 COALESCE(SUM(CASE WHEN status='active'    THEN 1 ELSE 0 END),0) active_count,
-                COALESCE(SUM(CASE WHEN status='used'      THEN 1 ELSE 0 END),0) used_count,
+                COALESCE(SUM(CASE WHEN status='active' AND entries_used > 0 THEN 1 ELSE 0 END),0) used_count,
                 COALESCE(SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END),0) cancelled_count,
                 COALESCE(SUM(CASE WHEN status='revoked'   THEN 1 ELSE 0 END),0) revoked_count,
                 COALESCE(SUM(people_inside),0) people_inside
