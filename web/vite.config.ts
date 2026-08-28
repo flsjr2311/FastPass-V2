@@ -11,11 +11,11 @@ export default defineConfig({
     // o frontend e a API têm a mesma origem (127.0.0.1:5173).
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5104',
+        target: 'http://127.0.0.1:5088',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://127.0.0.1:5104',
+        target: 'http://127.0.0.1:5088',
         changeOrigin: true,
       },
     },
