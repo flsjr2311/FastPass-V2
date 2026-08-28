@@ -107,19 +107,10 @@ const navGroups: { key: string; label: string; items: Screen[] }[] = [
 function App() {
   const [session, setSession] = useState<SessionView | null | undefined>(undefined); // undefined = carregando
   const [screen, setScreen] = useState<Screen>('dashboard');
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(navGroups.map((g) => [g.key, true])), // todos abertos por padrão
-  );
 
-  /** Troca de tela garantindo que o grupo correspondente esteja expandido no menu. */
+  /** Troca de tela. */
   function goToScreen(target: Screen) {
     setScreen(target);
-    const group = navGroups.find((g) => g.items.includes(target));
-    if (group) setOpenGroups((current) => ({ ...current, [group.key]: true }));
-  }
-
-  function toggleGroup(key: string) {
-    setOpenGroups((current) => ({ ...current, [key]: !current[key] }));
   }
 
   /** Verifica se a sessão atual tem uma permissão. */
@@ -239,7 +230,6 @@ function App() {
           </button>
           )}
           {navGroups.map((group) => {
-            const isOpen = openGroups[group.key];
             const visibleItems = group.items.filter((item) => {
               const perm = screenLabels[item].perm;
               return perm === null || session.permissions.includes(perm);
@@ -247,13 +237,10 @@ function App() {
             if (visibleItems.length === 0) return null; // esconde grupos sem itens visíveis
             return (
               <div className="nav-group" key={group.key}>
-                <button type="button" className="nav-group-label nav-group-toggle" onClick={() => toggleGroup(group.key)}>
-                  <span>{group.label}</span>
-                  <span className={`nav-group-caret${isOpen ? ' open' : ''}`}>▾</span>
-                </button>
-                {isOpen && visibleItems.map((item) => (
+                <span className="nav-group-label">{group.label}</span>
+                {visibleItems.map((item) => (
                   <button key={item} className={screen === item ? 'nav-item active' : 'nav-item'} onClick={() => goToScreen(item)}>
-                    <span className="nav-icon">{screenLabels[item].icon}</span><span>{screenLabels[item].label}</span>
+                    <span className="nav-icon">{screenLabels[item].icon}</span><span className="nav-text">{screenLabels[item].label}</span>
                     {item === 'audit' && attempts?.total ? <em>{attempts.total}</em> : null}
                   </button>
                 ))}
