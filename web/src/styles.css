@@ -277,3 +277,18 @@ td[colspan] { white-space: normal; }
   .filter-field select, .filter-search { width: 100%; }
   .filter-actions { justify-content: flex-end; }
 }
+
+/* ── Validação manual ─────────────────────────────────────────────────────── */
+.manual-autoclear { display: flex; align-items: center; gap: 8px; color: #8d99ab; font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; }
+.manual-autoclear select { height: 32px; padding: 0 24px 0 10px; border: 1px solid #dce2ec; border-radius: 7px; background: #fff; color: #46556e; font-size: 12px; cursor: pointer; }
+.manual-autoclear select:focus { outline: none; border-color: #7d97ec; box-shadow: 0 0 0 3px rgba(88, 119, 227, .12); }
+
+.manual-result { position: relative; margin: 16px; padding: 22px 24px; border-radius: 14px; color: #fff; cursor: pointer; animation: manualPop .18s ease-out; box-shadow: 0 8px 24px rgba(20, 30, 55, .18); }
+.manual-result.approved { background: linear-gradient(135deg, #1e9e6a, #25c07f); }
+.manual-result.rejected { background: linear-gradient(135deg, #eb3349, #f45c43); }
+.manual-result strong { display: block; font-size: 26px; letter-spacing: -.5px; }
+.manual-result span { display: block; margin-top: 6px; font-size: 14px; }
+.manual-result small { display: block; margin-top: 10px; font-size: 11px; opacity: .85; text-transform: uppercase; letter-spacing: .5px; }
+.manual-result-close { position: absolute; top: 14px; right: 16px; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: rgba(255,255,255,.18); color: #fff; font-size: 14px; transition: background .15s; }
+.manual-result-close:hover { background: rgba(255,255,255,.32); }
+@keyframes manualPop { from { transform: scale(.97); opacity: 0; } to { transform: scale(1); opacity: 1; } }

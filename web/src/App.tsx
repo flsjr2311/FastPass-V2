@@ -1258,6 +1258,20 @@ function AttemptTable({ attempts, expanded = false }: { attempts: AttemptPage['d
   return <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Credencial</th><th>Portaria / setor</th><th>Setor do ingresso</th><th>Direção</th><th>Decisão</th><th>{expanded ? 'Motivo' : 'Status'}</th></tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.attemptId}><td>{formatDate(attempt.requestedAt || attempt.createdAt, true)}</td><td><strong>{attempt.credentialType === 'StaffBadge' ? attempt.staffName || 'Crachá de usuário' : attempt.ticketExternalId || 'Ingresso'}</strong>{attempt.channel === 'Manual' && <span className="message-badge customized" style={{ marginLeft: 6, fontSize: 9 }}>✋ Manual</span>}<small className="table-id">{attempt.credentialCodeMasked}</small></td><td><strong>{attempt.gateName || 'Portaria não informada'}</strong><small>{attempt.sectorName || 'Setor não informado'}</small></td><td>{attempt.ticketSectorName || '—'}</td><td><span className="direction">{attempt.direction === 'Entry' ? '↓ Entrada' : '↑ Saída'}</span></td><td><StatusBadge value={attempt.decision} /></td><td>{expanded ? attempt.reason || '—' : <span className="muted-text">{attempt.status}</span>}</td></tr>)}</tbody></table></div>;
 }
 
+interface ManualHistoryItem {
+  key: string;
+  code: string;
+  approved: boolean;
+  reason?: string | null;
+  direction: string;
+  credentialType: string;
+  gateName: string;
+  sectorName?: string | null;
+  at: Date;
+}
+
+const AUTO_CLEAR_OPTIONS = [3, 5, 8, 0] as const; // 0 = não limpar automaticamente
+
 function ManualValidationView({ eventId, hasEvent }: { eventId: string; hasEvent: boolean }) {
   const [gates, setGates] = useState<GateView[]>([]);
   const [sectors, setSectors] = useState<SectorView[]>([]);
@@ -1269,6 +1283,10 @@ function ManualValidationView({ eventId, hasEvent }: { eventId: string; hasEvent
   const [validating, setValidating] = useState(false);
   const [result, setResult] = useState<import('./types').AccessValidationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [autoClearSecs, setAutoClearSecs] = useState<number>(5);
+  const [history, setHistory] = useState<ManualHistoryItem[]>([]);
+  const codeInputRef = useRef<HTMLInputElement | null>(null);
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!eventId) { setLoading(false); return; }
@@ -1279,27 +1297,59 @@ function ManualValidationView({ eventId, hasEvent }: { eventId: string; hasEvent
       .finally(() => setLoading(false));
   }, [eventId]);
 
+  // Limpa o timer ao desmontar
+  useEffect(() => () => { if (clearTimer.current) clearTimeout(clearTimer.current); }, []);
+
+  const focusCode = () => { setTimeout(() => codeInputRef.current?.focus(), 50); };
+
+  const clearResult = () => {
+    if (clearTimer.current) { clearTimeout(clearTimer.current); clearTimer.current = null; }
+    setResult(null);
+    focusCode();
+  };
+
   // Setores disponíveis para a portaria escolhida (via matriz)
   const sectorsForGate = gateId
     ? sectors.filter(s => gateSectors.some(gs => gs.gateId === gateId && gs.sectorId === s.id && gs.active))
     : [];
 
+  const gateName = gates.find(g => g.id === gateId)?.name ?? '';
+
   async function handleValidate(e: FormEvent) {
     e.preventDefault();
     if (!code.trim() || !gateId) { setError('Informe o código e a portaria.'); return; }
     setValidating(true); setError(null); setResult(null);
+    if (clearTimer.current) { clearTimeout(clearTimer.current); clearTimer.current = null; }
+    const scannedCode = code.trim();
     try {
       const r = await api.validateManual({
-        credentialCode: code.trim(),
+        credentialCode: scannedCode,
         eventId,
         gateId,
         sectorId: sectorId || null,
         idempotencyKey: crypto.randomUUID(),
       });
       setResult(r);
+      setHistory(prev => [{
+        key: r.attemptId ?? crypto.randomUUID(),
+        code: scannedCode,
+        approved: r.approved,
+        reason: r.reason,
+        direction: r.direction,
+        credentialType: r.credentialType,
+        gateName,
+        sectorName: sectors.find(s => s.id === sectorId)?.name ?? null,
+        at: new Date(),
+      }, ...prev].slice(0, 10));
       setCode('');
+      focusCode();
+      // Auto-limpa o resultado após o tempo configurado (0 = manter)
+      if (autoClearSecs > 0) {
+        clearTimer.current = setTimeout(() => { setResult(null); clearTimer.current = null; }, autoClearSecs * 1000);
+      }
     } catch (r: unknown) {
       setError(r instanceof Error ? r.message : 'Erro na validação.');
+      focusCode();
     } finally {
       setValidating(false);
     }
@@ -1308,41 +1358,72 @@ function ManualValidationView({ eventId, hasEvent }: { eventId: string; hasEvent
   if (!hasEvent) return <section className="panel full-panel"><EmptyState message="Selecione um evento para validar manualmente." /></section>;
   if (loading) return <section className="panel full-panel"><div className="loading-panel"><span className="spinner" />Carregando portarias...</div></section>;
 
-  return <section className="panel full-panel">
-    <div className="panel-heading"><div><p className="panel-kicker">OPERAÇÃO DE PORTARIA</p><h2>Validação Manual</h2><p className="panel-subtitle">Use para liberar acesso em exceções (backstage, convidados, falha de catraca). Registrado como validação manual e contabilizado na portaria/setor escolhidos.</p></div></div>
-    {error && <div className="alert-error inline-alert"><strong>Não foi possível validar.</strong><span>{error}</span></div>}
-    <form className="event-create-form" onSubmit={handleValidate}>
-      <div className="form-row form-row-three">
-        <label>Portaria
+  return <>
+    <section className="panel full-panel">
+      <div className="panel-heading">
+        <div><p className="panel-kicker">OPERAÇÃO DE PORTARIA</p><h2>Validação Manual</h2><p className="panel-subtitle">Use para liberar acesso em exceções (backstage, convidados, falha de catraca). Registrado como validação manual e contabilizado na portaria/setor escolhidos.</p></div>
+        <label className="manual-autoclear">Limpar após
+          <select value={autoClearSecs} onChange={(e) => setAutoClearSecs(Number(e.target.value))}>
+            {AUTO_CLEAR_OPTIONS.map(s => <option key={s} value={s}>{s === 0 ? 'Manual' : `${s}s`}</option>)}
+          </select>
+        </label>
+      </div>
+      {error && <div className="alert-error inline-alert"><strong>Não foi possível validar.</strong><span>{error}</span></div>}
+      <form className="ticket-filter-bar" onSubmit={handleValidate}>
+        <div className="filter-field">
+          <label>Portaria</label>
           <select value={gateId} onChange={(e) => { setGateId(e.target.value); setSectorId(''); }} disabled={validating}>
             <option value="">Selecione a portaria</option>
             {gates.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
-        </label>
-        <label>Setor (opcional)
+        </div>
+        <div className="filter-field">
+          <label>Setor (opcional)</label>
           <select value={sectorId} onChange={(e) => setSectorId(e.target.value)} disabled={validating || !gateId}>
             <option value="">— Automático (setor do ingresso) —</option>
             {sectorsForGate.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-        </label>
-        <label>Código do ingresso / crachá
-          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Escaneie ou digite o código" disabled={validating} style={{ fontFamily: 'monospace' }} autoFocus />
-        </label>
-      </div>
-      <button className="primary-button form-submit" type="submit" disabled={validating || !gateId || !code.trim()}>
-        {validating ? 'Validando...' : '✋ Validar manualmente'}
-      </button>
-    </form>
-    {result && (
-      <div className={`manual-result ${result.approved ? 'approved' : 'rejected'}`} style={{ marginTop: 16, padding: 20, borderRadius: 12, background: result.approved ? 'linear-gradient(135deg,#1e9e6a,#25c07f)' : 'linear-gradient(135deg,#eb3349,#f45c43)', color: '#fff' }}>
-        <strong style={{ fontSize: 24, display: 'block' }}>{result.approved ? '✓ ACESSO LIBERADO' : '✕ ACESSO NEGADO'}</strong>
-        <span style={{ display: 'block', marginTop: 6 }}>{result.reason || (result.approved ? 'Validação manual registrada.' : '')}</span>
-        <small style={{ display: 'block', marginTop: 8, opacity: 0.85 }}>
-          {result.direction === 'Entry' ? 'Entrada' : 'Saída'} · {result.credentialType === 'StaffBadge' ? 'Crachá de usuário' : 'Ingresso'} · Validação manual
-        </small>
-      </div>
-    )}
-  </section>;
+        </div>
+        <div className="filter-field filter-search">
+          <label>Código do ingresso / crachá</label>
+          <div className="filter-search-input">
+            <span className="filter-search-icon">⌕</span>
+            <input ref={codeInputRef} value={code} onChange={(e) => setCode(e.target.value)} placeholder="Escaneie ou digite o código" disabled={validating} autoFocus />
+          </div>
+        </div>
+        <div className="filter-actions">
+          <button className="primary-button" type="submit" disabled={validating || !gateId || !code.trim()}>
+            {validating ? 'Validando…' : '✋ Validar'}
+          </button>
+        </div>
+      </form>
+      {result && (
+        <div className={`manual-result ${result.approved ? 'approved' : 'rejected'}`} onClick={clearResult} title="Clique para limpar">
+          <button type="button" className="manual-result-close" onClick={(e) => { e.stopPropagation(); clearResult(); }}>✕</button>
+          <strong>{result.approved ? '✓ ACESSO LIBERADO' : '✕ ACESSO NEGADO'}</strong>
+          <span>{result.reason || (result.approved ? 'Validação manual registrada.' : '')}</span>
+          <small>{result.direction === 'Entry' ? 'Entrada' : 'Saída'} · {result.credentialType === 'StaffBadge' ? 'Crachá de usuário' : 'Ingresso'} · Validação manual</small>
+        </div>
+      )}
+    </section>
+
+    <section className="panel full-panel">
+      <div className="panel-heading"><div><p className="panel-kicker">HISTÓRICO</p><h2>Últimas validações manuais</h2><p className="panel-subtitle">Registros desta sessão (as validações também constam na Auditoria).</p></div>{history.length > 0 && <button className="secondary-button" onClick={() => setHistory([])}>Limpar histórico</button>}</div>
+      {history.length === 0
+        ? <EmptyState message="Nenhuma validação manual nesta sessão ainda." />
+        : <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Código</th><th>Portaria / setor</th><th>Direção</th><th>Resultado</th><th>Motivo</th></tr></thead>
+            <tbody>{history.map(h => (
+              <tr key={h.key}>
+                <td>{h.at.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+                <td><code>{h.code}</code></td>
+                <td><strong>{h.gateName || '—'}</strong><small>{h.sectorName || 'Automático'}</small></td>
+                <td><span className="direction">{h.direction === 'Entry' ? '↓ Entrada' : '↑ Saída'}</span></td>
+                <td><StatusBadge value={h.approved ? 'Approved' : 'Rejected'} /></td>
+                <td>{h.approved ? '—' : (h.reason || '—')}</td>
+              </tr>
+            ))}</tbody></table></div>}
+    </section>
+  </>;
 }
 
 function ClientsView() {
