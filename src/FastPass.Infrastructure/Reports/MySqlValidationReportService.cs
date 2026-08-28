@@ -195,12 +195,12 @@ public sealed class MySqlValidationReportService : IValidationReportService
         cmd.CommandText = """
             SELECT s.id, s.name, s.capacity,
                    (SELECT COUNT(*) FROM fp_tickets t WHERE t.event_id=s.event_id AND t.sector_id=s.id AND t.status='active') total_tickets,
-                   (SELECT COUNT(DISTINCT a2.ticket_id)
-                    FROM fp_access_attempts a2
-                    WHERE a2.event_id=s.event_id AND a2.sector_id=s.id AND a2.decision='Approved') validated,
-                   (SELECT COALESCE(SUM(t2.people_inside),0)
+                   (SELECT COUNT(DISTINCT t2.id)
                     FROM fp_tickets t2
-                    WHERE t2.event_id=s.event_id AND t2.sector_id=s.id AND t2.status='active') people_inside
+                    WHERE t2.event_id=s.event_id AND t2.sector_id=s.id AND t2.status='active' AND t2.uses > 0) validated,
+                   (SELECT COALESCE(SUM(t3.people_inside),0)
+                    FROM fp_tickets t3
+                    WHERE t3.event_id=s.event_id AND t3.sector_id=s.id AND t3.status='active') people_inside
             FROM fp_sectors s
             WHERE s.event_id=@eid AND s.active=1
             ORDER BY s.name;
