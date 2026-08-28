@@ -1,4 +1,44 @@
-export type Screen = 'dashboard' | 'events' | 'tickets' | 'audit' | 'configuration' | 'messages' | 'users' | 'import' | 'importLogs' | 'reports' | 'admin' | 'clients' | 'manualValidation';
+export type Screen = 'dashboard' | 'events' | 'tickets' | 'audit' | 'configuration' | 'messages' | 'users' | 'import' | 'importLogs' | 'reports' | 'admin' | 'clients' | 'manualValidation' | 'loginLog' | 'auditTrail';
+
+export interface LoginLogEntry {
+  id: string;
+  userId: string | null;
+  userName: string;
+  displayName: string;
+  outcome: string; // Success | InvalidPassword | UnknownUser | Blocked | Inactive
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+export interface LoginLogPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  data: LoginLogEntry[];
+}
+
+export interface AuditTrailEntry {
+  id: string;
+  userId: string | null;
+  userName: string | null;
+  action: string;
+  method: string;
+  path: string;
+  targetId: string | null;
+  statusCode: number;
+  summary: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+export interface AuditTrailPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  data: AuditTrailEntry[];
+}
 
 export interface VenueView {
   id: string;

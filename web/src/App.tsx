@@ -20,6 +20,8 @@ import type {
   SectorView,
   TicketView,
   VenueView,
+  LoginLogEntry,
+  AuditTrailEntry,
 } from './types';
 
 const emptySummary: AttemptSummary = {
@@ -45,6 +47,8 @@ const screenLabels: Record<Screen, { label: string; icon: string; description: s
   tickets:       { label: 'Tickets',             icon: '▣', description: 'Ingressos emitidos e utilização',                 group: 'operacao', perm: 'ticket.consultar' },
   reports:       { label: 'Relatórios',          icon: '◈', description: 'Métricas, cobertura e análise de rejeições',      group: 'operacao', perm: 'relatorio.ler' },
   audit:         { label: 'Auditoria de acessos', icon: '◌', description: 'Histórico de tentativas de validação de acesso', group: 'logs',     perm: 'acessos.ler' },
+  loginLog:      { label: 'Acessos ao sistema',  icon: '⚿', description: 'Histórico de login (sucesso e falhas) no sistema', group: 'logs',    perm: 'auditoria.ler' },
+  auditTrail:    { label: 'Trilha de auditoria', icon: '❑', description: 'Ações no sistema: criação, edição, exclusão, importação', group: 'logs', perm: 'auditoria.ler' },
   importLogs:    { label: 'Importações',         icon: '☰', description: 'Histórico de importações, com detalhe por linha', group: 'logs',     perm: 'ticket.importar' },
   import:        { label: 'Importar',            icon: '↑', description: 'Importar ingressos via arquivo CSV',              group: 'admin',    perm: 'ticket.importar' },
   users:         { label: 'Usuários',            icon: '◎', description: 'Usuários, perfis e permissões de acesso',         group: 'admin',    perm: 'usuario.gerenciar' },
@@ -100,7 +104,7 @@ function EmptyState({ message }: { message: string }) {
 const navGroups: { key: string; label: string; items: Screen[] }[] = [
   { key: 'cadastro', label: 'CADASTRO', items: ['clients', 'events'] },
   { key: 'operacao', label: 'OPERAÇÃO', items: ['configuration', 'manualValidation', 'tickets', 'reports'] },
-  { key: 'logs', label: 'LOGS', items: ['audit', 'importLogs'] },
+  { key: 'logs', label: 'LOGS', items: ['audit', 'loginLog', 'auditTrail', 'importLogs'] },
   { key: 'admin', label: 'ADMINISTRAÇÃO', items: ['import', 'users', 'messages'] },
 ];
 
@@ -291,6 +295,8 @@ function App() {
               {screen === 'tickets' && <TicketsView tickets={tickets} loading={ticketsLoading} hasEvent={Boolean(selectedEvent)} eventId={selectedEventId} canManageStatus={session.permissions.includes('ticket.status')} />}
               {screen === 'manualValidation' && <ManualValidationView eventId={selectedEventId} hasEvent={Boolean(selectedEvent)} />}
               {screen === 'audit' && <AuditView attempts={attempts} loading={operationalLoading} />}
+              {screen === 'loginLog' && <LoginLogView />}
+              {screen === 'auditTrail' && <AuditTrailView />}
               {screen === 'configuration' && <ConfigurationView eventId={selectedEventId} />}
               {screen === 'messages' && <MessagesView eventId={selectedEventId} />}
               {screen === 'users' && <UsersView />}
@@ -1287,6 +1293,157 @@ function AuditView({ attempts, loading }: { attempts: AttemptPage | null; loadin
 function AttemptTable({ attempts, expanded = false }: { attempts: AttemptPage['data']; expanded?: boolean }) {
   if (attempts.length === 0) return <EmptyState message="Ainda não há tentativas de acesso registradas." />;
   return <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Credencial</th><th>Portaria / setor</th><th>Setor do ingresso</th><th>Direção</th><th>Decisão</th><th>{expanded ? 'Motivo' : 'Status'}</th></tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.attemptId}><td>{formatDate(attempt.requestedAt || attempt.createdAt, true)}</td><td><strong>{attempt.credentialType === 'StaffBadge' ? attempt.staffName || 'Crachá de usuário' : attempt.ticketExternalId || 'Ingresso'}</strong>{attempt.channel === 'Manual' && <span className="message-badge customized" style={{ marginLeft: 6, fontSize: 9 }}>✋ Manual</span>}<small className="table-id">{attempt.credentialCodeMasked}</small></td><td><strong>{attempt.gateName || 'Portaria não informada'}</strong><small>{attempt.sectorName || 'Setor não informado'}</small></td><td>{attempt.ticketSectorName || '—'}</td><td><span className="direction">{attempt.direction === 'Entry' ? '↓ Entrada' : '↑ Saída'}</span></td><td><StatusBadge value={attempt.decision} /></td><td>{expanded ? attempt.reason || '—' : <span className="muted-text">{attempt.status}</span>}</td></tr>)}</tbody></table></div>;
+}
+
+/** Rótulo legível e tom visual para o desfecho de um login. */
+function loginOutcomeLabel(outcome: string): { label: string; tone: string } {
+  switch (outcome) {
+    case 'Success': return { label: 'Sucesso', tone: 'approved' };
+    case 'InvalidPassword': return { label: 'Senha inválida', tone: 'rejected' };
+    case 'UnknownUser': return { label: 'Usuário inexistente', tone: 'rejected' };
+    case 'Blocked': return { label: 'Conta bloqueada', tone: 'rejected' };
+    case 'Inactive': return { label: 'Usuário inativo', tone: 'rejected' };
+    default: return { label: outcome, tone: 'pending' };
+  }
+}
+
+const PAGE_SIZE = 50;
+
+/** Trilha de ACESSO AO SISTEMA (login): sucessos e falhas de autenticação. */
+function LoginLogView() {
+  const [page, setPage] = useState(1);
+  const [userName, setUserName] = useState('');
+  const [outcome, setOutcome] = useState('');
+  const [data, setData] = useState<LoginLogEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Filtros aplicados (só mudam ao clicar em Filtrar), para não recarregar a cada tecla.
+  const [applied, setApplied] = useState<{ userName: string; outcome: string }>({ userName: '', outcome: '' });
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError(null);
+    api.listLoginLog({ page, pageSize: PAGE_SIZE, userName: applied.userName || undefined, outcome: applied.outcome || undefined })
+      .then((res) => { if (alive) { setData(res.data); setTotal(res.total); } })
+      .catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : 'Erro ao carregar.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [page, applied]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  function applyFilters(e: FormEvent) {
+    e.preventDefault();
+    setPage(1);
+    setApplied({ userName: userName.trim(), outcome });
+  }
+
+  return <section className="panel full-panel">
+    <div className="panel-heading">
+      <div><p className="panel-kicker">SEGURANÇA</p><h2>Acessos ao sistema</h2>
+        <p className="panel-subtitle">{`${total} tentativa(s) de login registrada(s)`}</p></div>
+    </div>
+    <form className="filter-bar" onSubmit={applyFilters} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>Usuário
+        <input value={userName} onChange={(ev) => setUserName(ev.target.value)} placeholder="nome de usuário" /></label>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>Desfecho
+        <select value={outcome} onChange={(ev) => setOutcome(ev.target.value)}>
+          <option value="">Todos</option>
+          <option value="Success">Sucesso</option>
+          <option value="InvalidPassword">Senha inválida</option>
+          <option value="UnknownUser">Usuário inexistente</option>
+          <option value="Blocked">Conta bloqueada</option>
+          <option value="Inactive">Usuário inativo</option>
+        </select></label>
+      <button className="primary-button" type="submit">Filtrar</button>
+    </form>
+    {error && <div className="notice error">{error}</div>}
+    {loading ? <div className="table-loading"><span className="spinner" />Carregando...</div>
+      : data.length === 0 ? <EmptyState message="Nenhum acesso registrado com os filtros atuais." />
+      : <>
+        <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Usuário</th><th>Desfecho</th><th>IP</th><th>Dispositivo</th></tr></thead>
+          <tbody>{data.map((r) => { const o = loginOutcomeLabel(r.outcome); return (
+            <tr key={r.id}>
+              <td>{formatDate(r.createdAt, true)}</td>
+              <td><strong>{r.userName}</strong>{r.displayName && <small className="table-id">{r.displayName}</small>}</td>
+              <td><StatusBadge value={o.tone} />{' '}<span className="muted-text">{o.label}</span></td>
+              <td>{r.ip || '—'}</td>
+              <td><small className="muted-text" title={r.userAgent || ''}>{(r.userAgent || '—').slice(0, 40)}</small></td>
+            </tr>); })}</tbody></table></div>
+        <Pager page={page} totalPages={totalPages} onChange={setPage} />
+      </>}
+  </section>;
+}
+
+/** Trilha de AUDITORIA de ações no sistema (criação/edição/exclusão/importação…). */
+function AuditTrailView() {
+  const [page, setPage] = useState(1);
+  const [userName, setUserName] = useState('');
+  const [action, setAction] = useState('');
+  const [data, setData] = useState<AuditTrailEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [applied, setApplied] = useState<{ userName: string; action: string }>({ userName: '', action: '' });
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError(null);
+    api.listAuditTrail({ page, pageSize: PAGE_SIZE, userName: applied.userName || undefined, action: applied.action || undefined })
+      .then((res) => { if (alive) { setData(res.data); setTotal(res.total); } })
+      .catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : 'Erro ao carregar.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [page, applied]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  function applyFilters(e: FormEvent) {
+    e.preventDefault();
+    setPage(1);
+    setApplied({ userName: userName.trim(), action: action.trim() });
+  }
+
+  return <section className="panel full-panel">
+    <div className="panel-heading">
+      <div><p className="panel-kicker">RASTREABILIDADE</p><h2>Trilha de auditoria</h2>
+        <p className="panel-subtitle">{`${total} ação(ões) registrada(s)`}</p></div>
+    </div>
+    <form className="filter-bar" onSubmit={applyFilters} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>Usuário
+        <input value={userName} onChange={(ev) => setUserName(ev.target.value)} placeholder="nome de usuário" /></label>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>Ação
+        <input value={action} onChange={(ev) => setAction(ev.target.value)} placeholder="ex: Criou, Excluiu, Importou" /></label>
+      <button className="primary-button" type="submit">Filtrar</button>
+    </form>
+    {error && <div className="notice error">{error}</div>}
+    {loading ? <div className="table-loading"><span className="spinner" />Carregando...</div>
+      : data.length === 0 ? <EmptyState message="Nenhuma ação registrada com os filtros atuais." />
+      : <>
+        <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Usuário</th><th>Ação</th><th>Requisição</th><th>Detalhes</th><th>IP</th></tr></thead>
+          <tbody>{data.map((r) => (
+            <tr key={r.id}>
+              <td>{formatDate(r.createdAt, true)}</td>
+              <td><strong>{r.userName || '—'}</strong></td>
+              <td>{r.action}</td>
+              <td><small className="table-id">{r.method} {r.path}</small></td>
+              <td><small className="muted-text" title={r.summary || ''}>{(r.summary || '—').slice(0, 60)}</small></td>
+              <td>{r.ip || '—'}</td>
+            </tr>))}</tbody></table></div>
+        <Pager page={page} totalPages={totalPages} onChange={setPage} />
+      </>}
+  </section>;
+}
+
+/** Paginação simples reutilizável. */
+function Pager({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
+  if (totalPages <= 1) return null;
+  return <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', marginTop: 12 }}>
+    <button className="secondary-button" disabled={page <= 1} onClick={() => onChange(page - 1)}>← Anterior</button>
+    <span className="muted-text" style={{ fontSize: 12 }}>Página {page} de {totalPages}</span>
+    <button className="secondary-button" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>Próxima →</button>
+  </div>;
 }
 
 interface ManualHistoryItem {

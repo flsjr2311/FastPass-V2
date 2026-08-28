@@ -20,6 +20,8 @@
   SectorView,
   TicketView,
   VenueView,
+  LoginLogPage,
+  AuditTrailPage,
 } from './types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
@@ -48,6 +50,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+/** Monta uma query string ignorando valores vazios/indefinidos. */
+function buildQuery(params: Record<string, string | number | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && String(v).length > 0) q.set(k, String(v));
+  }
+  return q.toString();
+}
+
 export const api = {
   // ── Auth ──────────────────────────────────────────────────────────────────
   login: (userName: string, password: string) =>
@@ -67,6 +78,11 @@ export const api = {
     request<{ message: string }>(`/api/users/${userId}/unblock`, { method: 'POST' }),
   resetUserPassword: (userId: string, newPassword: string) =>
     request<{ message: string }>(`/api/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({ newPassword }) }),
+  // ── Trilhas de auditoria ──────────────────────────────────────────────────
+  listLoginLog: (params: { page?: number; pageSize?: number; userName?: string; outcome?: string; from?: string; to?: string } = {}) =>
+    request<LoginLogPage>(`/api/login-log?${buildQuery(params)}`),
+  listAuditTrail: (params: { page?: number; pageSize?: number; userName?: string; action?: string; from?: string; to?: string } = {}) =>
+    request<AuditTrailPage>(`/api/audit-trail?${buildQuery(params)}`),
   listRoles: () => request<RoleView[]>('/api/roles'),
   createRole: (payload: { name: string; description?: string }) =>
     request<RoleView>('/api/roles', { method: 'POST', body: JSON.stringify(payload) }),

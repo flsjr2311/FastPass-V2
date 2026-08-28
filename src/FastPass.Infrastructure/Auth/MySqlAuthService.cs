@@ -88,17 +88,26 @@ public sealed class MySqlAuthService : IAuthService
         var committed = false;
         try
         {
-            var user = await ReadUserAuthAsync(conn, tx, cmd.UserName.Trim(), ct);
+            var userName = cmd.UserName.Trim();
+            var user = await ReadUserAuthAsync(conn, tx, userName, ct);
             var now = DateTime.UtcNow;
 
-            if (user is null || !user.Active)
+            if (user is null)
             {
                 await tx.CommitAsync(ct); committed = true;
+                await WriteLoginLogAsync(null, userName, "UnknownUser", ip, ua, ct);
+                throw new AuthException("Usuário ou senha inválidos.");
+            }
+            if (!user.Active)
+            {
+                await tx.CommitAsync(ct); committed = true;
+                await WriteLoginLogAsync(user.Id, userName, "Inactive", ip, ua, ct);
                 throw new AuthException("Usuário ou senha inválidos.");
             }
             if (user.BlockedUntil.HasValue && user.BlockedUntil.Value > now)
             {
                 await tx.CommitAsync(ct); committed = true;
+                await WriteLoginLogAsync(user.Id, userName, "Blocked", ip, ua, ct);
                 var mins = (int)Math.Ceiling((user.BlockedUntil.Value - now).TotalMinutes);
                 throw new AuthException($"Conta bloqueada. Tente novamente em {mins} minuto(s).");
             }
@@ -109,6 +118,7 @@ public sealed class MySqlAuthService : IAuthService
                 await Exec(conn, tx, "UPDATE fp_users SET failed_attempts=@f,blocked_until=@b WHERE id=@id;",
                     ct, ("@f", failed), ("@b", (object?)block ?? DBNull.Value), ("@id", user.Id.ToString()));
                 await tx.CommitAsync(ct); committed = true;
+                await WriteLoginLogAsync(user.Id, userName, "InvalidPassword", ip, ua, ct);
                 throw new AuthException("Usuário ou senha inválidos.");
             }
 
@@ -127,6 +137,7 @@ public sealed class MySqlAuthService : IAuthService
                 ("@now", now), ("@exp", now.Add(SessionDuration)));
 
             await tx.CommitAsync(ct); committed = true;
+            await WriteLoginLogAsync(user.Id, userName, "Success", ip, ua, ct);
             var perms = await GetUserPermissionsAsync(conn, user.Id, ct);
             return (rawToken, new SessionView(user.Id, user.UserName, user.DisplayName, true, perms));
         }
@@ -393,6 +404,59 @@ public sealed class MySqlAuthService : IAuthService
         c.CommandText = "UPDATE fp_users SET failed_attempts=0,blocked_until=NULL WHERE id=@id;";
         c.Parameters.AddWithValue("@id", userId.ToString());
         if (await c.ExecuteNonQueryAsync(ct) == 0) throw new ArgumentException("Usuário não encontrado.");
+    }
+
+    public async Task<LoginLogPage> ListLoginLogAsync(
+        int page, int pageSize, string? userName, string? outcome,
+        DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct = default)
+    {
+        if (page < 1) page = 1;
+        if (pageSize is < 1 or > 200) pageSize = 50;
+
+        var where = new List<string>();
+        var ps = new List<(string, object)>();
+        if (!string.IsNullOrWhiteSpace(userName)) { where.Add("l.user_name LIKE @un"); ps.Add(("@un", $"%{userName.Trim()}%")); }
+        if (!string.IsNullOrWhiteSpace(outcome)) { where.Add("l.outcome = @oc"); ps.Add(("@oc", outcome.Trim())); }
+        if (from.HasValue) { where.Add("l.created_at >= @from"); ps.Add(("@from", from.Value.UtcDateTime)); }
+        if (to.HasValue) { where.Add("l.created_at <= @to"); ps.Add(("@to", to.Value.UtcDateTime)); }
+        var whereSql = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
+
+        await using var conn = _factory.Create();
+        await conn.OpenAsync(ct);
+
+        await using var countCmd = conn.CreateCommand();
+        countCmd.CommandText = $"SELECT COUNT(*) FROM fp_login_log l {whereSql};";
+        foreach (var (n, v) in ps) countCmd.Parameters.AddWithValue(n, v);
+        var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync(ct));
+
+        var data = new List<LoginLogEntry>();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT l.id, l.user_id, l.user_name, COALESCE(u.display_name, '') AS display_name,
+                   l.outcome, l.ip, l.user_agent, l.created_at
+            FROM fp_login_log l
+            LEFT JOIN fp_users u ON u.id = l.user_id
+            {whereSql}
+            ORDER BY l.created_at DESC
+            LIMIT @take OFFSET @skip;
+            """;
+        foreach (var (n, v) in ps) cmd.Parameters.AddWithValue(n, v);
+        cmd.Parameters.AddWithValue("@take", pageSize);
+        cmd.Parameters.AddWithValue("@skip", (page - 1) * pageSize);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+        {
+            data.Add(new LoginLogEntry(
+                ReadGuid(r, 0),
+                r.IsDBNull(1) ? null : ReadGuid(r, 1),
+                r.GetString(2),
+                r.GetString(3),
+                r.GetString(4),
+                r.IsDBNull(5) ? null : r.GetString(5),
+                r.IsDBNull(6) ? null : r.GetString(6),
+                new DateTimeOffset(DateTime.SpecifyKind(r.GetDateTime(7), DateTimeKind.Utc))));
+        }
+        return new LoginLogPage(page, pageSize, total, data);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -907,4 +971,32 @@ public sealed class MySqlAuthService : IAuthService
 
     private static Guid ReadGuid(MySqlDataReader r, int i) =>
         Guid.Parse(r.GetValue(i).ToString()!);
+
+    /// <summary>
+    /// Grava uma tentativa de login em fp_login_log usando conexão própria.
+    /// Nunca lança: uma falha de log não pode impedir/derrubar o login.
+    /// </summary>
+    private async Task WriteLoginLogAsync(
+        Guid? userId, string userName, string outcome, string? ip, string? ua, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = _factory.Create();
+            await conn.OpenAsync(ct);
+            await using var c = conn.CreateCommand();
+            c.CommandText = """
+                INSERT INTO fp_login_log (id,user_id,user_name,outcome,ip,user_agent,created_at)
+                VALUES (@id,@uid,@un,@oc,@ip,@ua,@now);
+                """;
+            c.Parameters.AddWithValue("@id", Guid.NewGuid().ToString());
+            c.Parameters.AddWithValue("@uid", (object?)userId?.ToString() ?? DBNull.Value);
+            c.Parameters.AddWithValue("@un", userName.Length > 128 ? userName[..128] : userName);
+            c.Parameters.AddWithValue("@oc", outcome);
+            c.Parameters.AddWithValue("@ip", (object?)ip ?? DBNull.Value);
+            c.Parameters.AddWithValue("@ua", (object?)(ua is { Length: > 512 } ? ua[..512] : ua) ?? DBNull.Value);
+            c.Parameters.AddWithValue("@now", DateTime.UtcNow);
+            await c.ExecuteNonQueryAsync(ct);
+        }
+        catch { /* log de auditoria é best-effort; não propaga */ }
+    }
 }

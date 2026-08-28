@@ -159,6 +159,23 @@ public sealed record RoleView(
 
 public sealed record PermissionView(string Code, string Description, bool Privileged);
 
+/// <summary>Registro de uma tentativa de login (acesso ao sistema).</summary>
+public sealed record LoginLogEntry(
+    Guid Id,
+    Guid? UserId,
+    string UserName,
+    string DisplayName,
+    string Outcome,
+    string? Ip,
+    string? UserAgent,
+    DateTimeOffset CreatedAt);
+
+public sealed record LoginLogPage(
+    int Page,
+    int PageSize,
+    int Total,
+    IReadOnlyList<LoginLogEntry> Data);
+
 // ── Exceções ──────────────────────────────────────────────────────────────────
 
 public sealed class AuthException : Exception
@@ -211,6 +228,11 @@ public interface IAuthService
         CancellationToken cancellationToken = default);
 
     Task UnblockUserAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Leitura paginada da trilha de acesso ao sistema (login).</summary>
+    Task<LoginLogPage> ListLoginLogAsync(
+        int page, int pageSize, string? userName, string? outcome,
+        DateTimeOffset? from, DateTimeOffset? to, CancellationToken cancellationToken = default);
 
     // Perfis
     Task<RoleView> CreateRoleAsync(CreateRoleCommand command,

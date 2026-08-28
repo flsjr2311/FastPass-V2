@@ -1,6 +1,8 @@
 ﻿using FastPass.Api.Auth;
 using FastPass.Application.Access;
+using FastPass.Application.Audit;
 using FastPass.Application.Auth;
+using FastPass.Infrastructure.Audit;
 using FastPass.Application.Catalog;
 using FastPass.Application.Import;
 using FastPass.Domain.Enums;
@@ -30,6 +32,7 @@ builder.Services.AddSingleton<IAccessAttemptQueryService, MySqlAccessAttemptQuer
 builder.Services.AddSingleton<IAccessValidationService, MySqlAccessValidationService>();
 builder.Services.AddScoped<ITicketImportService, MySqlTicketImportService>();
 builder.Services.AddSingleton<IValidationReportService, MySqlValidationReportService>();
+builder.Services.AddSingleton<IAuditTrailService, MySqlAuditTrailService>();
 
 builder.Services.AddCors(options =>
 {
@@ -47,6 +50,8 @@ app.UseCors("WebApp");
 
 // SessionMiddleware deve vir depois do CORS
 app.UseMiddleware<SessionMiddleware>();
+// AuditTrailMiddleware depois da sessão, para conhecer o usuário autenticado.
+app.UseMiddleware<AuditTrailMiddleware>();
 
 // ── Migrations + seed ─────────────────────────────────────────────────────────
 if (app.Environment.IsDevelopment())
@@ -232,6 +237,30 @@ app.MapDelete("/api/roles/{roleId:guid}", async (Guid roleId, IAuthService auth,
     catch (AuthForbiddenException ex) { return Results.Json(new { error = ex.Message }, statusCode: 403); }
     catch (AuthConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Trilhas de auditoria  (requer auditoria.ler)
+//   • login-log  → acesso ao SISTEMA (autenticação)
+//   • audit-trail → ações que mudam estado (criação, edição, exclusão, importação…)
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.MapGet("/api/login-log", async (
+    int? page, int? pageSize, string? userName, string? outcome,
+    DateTimeOffset? from, DateTimeOffset? to,
+    IAuthService auth, HttpContext ctx, CancellationToken ct) =>
+{
+    if (ctx.RequirePermission("auditoria.ler") is { } e) return e;
+    return Results.Ok(await auth.ListLoginLogAsync(page ?? 1, pageSize ?? 50, userName, outcome, from, to, ct));
+});
+
+app.MapGet("/api/audit-trail", async (
+    int? page, int? pageSize, string? userName, string? action,
+    DateTimeOffset? from, DateTimeOffset? to,
+    IAuditTrailService audit, HttpContext ctx, CancellationToken ct) =>
+{
+    if (ctx.RequirePermission("auditoria.ler") is { } e) return e;
+    return Results.Ok(await audit.ListAsync(page ?? 1, pageSize ?? 50, userName, action, from, to, ct));
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
