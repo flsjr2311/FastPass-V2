@@ -766,13 +766,29 @@ function TicketsView({ tickets: _initialTickets, loading: _initialLoading, hasEv
       </button>
     </section>}
     <section className="panel full-panel"><div className="panel-heading"><div><p className="panel-kicker">CREDENCIAIS DE ACESSO</p><h2>Tickets do evento</h2><p className="panel-subtitle">Busque por código, filtre por status e altere a situação dos ingressos.</p></div></div>
-      <form className="ticket-search-form" onSubmit={handleSearch}>
-        <label>Código do ticket<input value={searchCode} onChange={(e) => setSearchCode(e.target.value)} placeholder="Digite o código exato" /></label>
-        <label>Status<select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}><option value="">Todos</option><option value="active">Ativo</option><option value="cancelled">Cancelado</option><option value="revoked">Revogado</option></select></label>
-        <button className="primary-button" type="submit" disabled={ticketsLoading}>{ticketsLoading ? 'Buscando...' : 'Buscar'}</button>
-        {(searchCode || filterStatus) && <button className="secondary-button" type="button" onClick={() => { setSearchCode(''); setFilterStatus(''); setTimeout(loadTickets, 0); }}>Limpar</button>}
+      <form className="ticket-filter-bar" onSubmit={handleSearch}>
+        <div className="filter-field filter-search">
+          <label>Código do ticket</label>
+          <div className="filter-search-input">
+            <span className="filter-search-icon">⌕</span>
+            <input value={searchCode} onChange={(e) => setSearchCode(e.target.value)} placeholder="Digite o código exato" />
+          </div>
+        </div>
+        <div className="filter-field">
+          <label>Status</label>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="">Todos</option>
+            <option value="active">Ativo</option>
+            <option value="cancelled">Cancelado</option>
+            <option value="revoked">Revogado</option>
+          </select>
+        </div>
+        <div className="filter-actions">
+          <button className="primary-button" type="submit" disabled={ticketsLoading}>{ticketsLoading ? 'Buscando…' : 'Buscar'}</button>
+          {(searchCode || filterStatus) && <button className="secondary-button" type="button" onClick={() => { setSearchCode(''); setFilterStatus(''); setTimeout(loadTickets, 0); }}>Limpar</button>}
+        </div>
       </form>
-      {ticketsLoading ? <div className="table-loading"><span className="spinner" />Carregando tickets...</div> : tickets.length === 0 ? <EmptyState message="Nenhum ticket encontrado com os filtros informados." /> : <div className="table-scroll"><table><thead><tr><th>Ticket</th><th>Código</th><th>Setor</th><th>Lote</th><th>Entradas</th><th>Quota</th><th>Status</th>{canManageStatus && <th>Ações</th>}</tr></thead><tbody>{tickets.slice(0, 200).map((ticket) => <tr key={ticket.id}><td><strong>{ticket.externalId || '—'}</strong><small className="table-id">{ticket.id.slice(0, 8)}</small></td><td><code>{ticket.code}</code></td><td>{ticket.sectorName || '—'}</td><td>{ticket.batchName || '—'}</td><td><div className="usage-cell"><span>{ticket.entriesUsed ?? 0}</span><div className="mini-progress"><i style={{ width: `${Math.min(((ticket.entriesUsed ?? 0) / Math.max(ticket.maximumEntries ?? 1, 1)) * 100, 100)}%` }} /></div></div></td><td>{ticket.maximumEntries ?? 1}</td><td><StatusBadge value={ticket.status} /></td>{canManageStatus && <td><select disabled={statusChanging === ticket.id} value={ticket.status} onChange={(e) => handleStatusChange(ticket.id, e.target.value)}><option value="active">Ativo</option><option value="cancelled">Cancelado</option><option value="revoked">Revogado</option></select></td>}</tr>)}</tbody></table></div>}
+      {ticketsLoading ? <div className="table-loading"><span className="spinner" />Carregando tickets...</div> : tickets.length === 0 ? <EmptyState message="Nenhum ticket encontrado com os filtros informados." /> : <div className="table-scroll"><table><thead><tr><th>Ticket</th><th>Código</th><th>Setor</th><th>Lote</th><th>Entradas</th><th>Quota</th><th>Status</th>{canManageStatus && <th>Ações</th>}</tr></thead><tbody>{tickets.slice(0, 200).map((ticket) => <tr key={ticket.id}><td><strong>{ticket.externalId || '—'}</strong><small className="table-id">{ticket.id.slice(0, 8)}</small></td><td><code>{ticket.code}</code></td><td>{ticket.sectorName || '—'}</td><td>{ticket.batchName || '—'}</td><td><div className="usage-cell"><span>{ticket.entriesUsed ?? 0}</span><div className="mini-progress"><i style={{ width: `${Math.min(((ticket.entriesUsed ?? 0) / Math.max(ticket.maximumEntries ?? 1, 1)) * 100, 100)}%` }} /></div></div></td><td>{ticket.maximumEntries ?? 1}</td><td><StatusBadge value={ticket.status} /></td>{canManageStatus && <td><select className="status-select" disabled={statusChanging === ticket.id} value={ticket.status} onChange={(e) => handleStatusChange(ticket.id, e.target.value)}><option value="active">Ativo</option><option value="cancelled">Cancelado</option><option value="revoked">Revogado</option></select></td>}</tr>)}</tbody></table></div>}
       {tickets.length > 200 && <p className="panel-subtitle" style={{ padding: '8px 16px' }}>Mostrando 200 de {tickets.length} tickets. Use os filtros para refinar.</p>}
     </section>
   </>;
