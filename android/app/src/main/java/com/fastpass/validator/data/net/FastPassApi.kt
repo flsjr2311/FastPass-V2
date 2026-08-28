@@ -17,6 +17,10 @@ import retrofit2.http.Query
 /** Contrato HTTP da API FastPass consumido pelo app. */
 interface FastPassApi {
 
+    /** Endpoint público de status, usado para testar a conexão com o servidor. */
+    @GET(".")
+    suspend fun ping(): Response<Unit>
+
     @POST("api/auth/login")
     suspend fun login(@Body body: LoginRequest): Response<SessionDto>
 

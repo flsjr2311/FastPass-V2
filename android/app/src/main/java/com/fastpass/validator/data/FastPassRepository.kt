@@ -38,6 +38,19 @@ class FastPassRepository(
         provider.invalidate()
     }
 
+    suspend fun isServerConfigured(): Boolean = prefs.isServerConfigured()
+
+    suspend fun markServerConfigured() = prefs.setServerConfigured(true)
+
+    /** Salva a URL informada e testa se o servidor responde (endpoint público "/"). */
+    suspend fun testConnection(url: String): Outcome<Unit> {
+        val normalized = AppPreferences.normalizeBaseUrl(url)
+        if (normalized.isBlank()) return Outcome.Error("Informe o endereço do servidor.")
+        prefs.setBaseUrl(normalized)
+        provider.invalidate()
+        return call { provider.api().ping() }
+    }
+
     suspend fun deviceLabel(): String? = prefs.deviceLabel()
     suspend fun setDeviceLabel(value: String) = prefs.setDeviceLabel(value)
 

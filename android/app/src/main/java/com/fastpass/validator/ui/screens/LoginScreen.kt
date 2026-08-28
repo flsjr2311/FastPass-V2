@@ -80,7 +80,7 @@ fun LoginScreen(
 
         Spacer(Modifier.height(24.dp))
         TextButton(onClick = onOpenSettings) {
-            Text("Configurar servidor (${state.baseUrl})")
+            Text("Servidor: ${state.baseUrl}  ·  Trocar")
         }
     }
 }

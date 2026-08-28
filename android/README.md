@@ -3,6 +3,7 @@
 App de validação de ingressos na portaria. Kotlin + Jetpack Compose.
 
 ## O que ele faz
+0. **Configurar servidor (primeira execução)**: antes do login, o app pede o endereço da API na rede local e **testa a conexão** (endpoint público `/`). Só avança se o servidor responder. Depois fica salvo; dá para trocar pelo botão "Trocar" na tela de login.
 1. **Login** do operador (usuário/senha da mesma API do sistema). Requer a permissão `acesso.validar`.
 2. **Seleção de evento e portaria** onde o operador está validando.
 3. **Leitura do QR/código** por três formas:
@@ -19,7 +20,7 @@ App de validação de ingressos na portaria. Kotlin + Jetpack Compose.
 > Este repositório não contém o Android SDK. Abra a pasta `android/` no Android Studio; ele baixa o Gradle (via wrapper) e as dependências automaticamente. O `gradle-wrapper.jar` é gerado pelo Android Studio na primeira sincronização (ou rode `gradle wrapper` se tiver o Gradle instalado).
 
 ## Configuração do servidor
-A URL da API é configurável na tela de login → "Configurar servidor". Padrões:
+Na primeira execução o app abre direto a tela de servidor (rede local). Depois, a URL é editável pelo botão "Trocar" na tela de login. Padrões/exemplos:
 - **Emulador Android**: `http://10.0.2.2:5088` (acessa o `localhost` da máquina host)
 - **Aparelho físico**: use o IP da máquina na rede local, ex.: `http://192.168.0.10:5088`
   - A API precisa estar ouvindo em `0.0.0.0` (já está: `Now listening on: http://0.0.0.0:5088`)

@@ -28,6 +28,7 @@ import com.fastpass.validator.ui.MainViewModel
 import com.fastpass.validator.ui.Screen
 import com.fastpass.validator.ui.screens.LoginScreen
 import com.fastpass.validator.ui.screens.ScannerScreen
+import com.fastpass.validator.ui.screens.ServerSetupScreen
 import com.fastpass.validator.ui.screens.SettingsScreen
 import com.fastpass.validator.ui.screens.SetupScreen
 import com.fastpass.validator.ui.theme.FastPassTheme
@@ -72,10 +73,15 @@ class MainActivity : ComponentActivity() {
             FastPassTheme {
                 when (state.screen) {
                     Screen.Loading -> LoadingScreen()
+                    Screen.ServerSetup -> ServerSetupScreen(
+                        state = state,
+                        onTest = vm::testAndSaveServer,
+                        onCancel = if (state.serverConfigured) vm::cancelServerSetup else null,
+                    )
                     Screen.Login -> LoginScreen(
                         state = state,
                         onLogin = vm::login,
-                        onOpenSettings = vm::openSettings,
+                        onOpenSettings = vm::openServerSetup,
                     )
                     Screen.Setup -> SetupScreen(
                         state = state,
@@ -94,7 +100,6 @@ class MainActivity : ComponentActivity() {
                     )
                     Screen.Settings -> SettingsScreen(
                         state = state,
-                        onSaveBaseUrl = vm::setBaseUrl,
                         onSaveDeviceLabel = vm::setDeviceLabel,
                         onClose = vm::closeSettings,
                     )

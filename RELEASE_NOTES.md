@@ -58,7 +58,7 @@ Rodada de correções, refinamentos operacionais e limpeza estrutural preparando
 
 #### App Android (validação na portaria)
 - Novo **app Android** (Kotlin + Jetpack Compose) em `android/` para validar ingressos na portaria.
-- Fluxo: login do operador → escolha de **evento** e **portaria** → leitura do QR/código → feedback **verde (liberado) / vermelho (negado)** com som e vibração, e feed das últimas validações.
+- Fluxo: **configuração do servidor na primeira execução** (informa o IP da API na rede local e testa a conexão) → login do operador → escolha de **evento** e **portaria** → leitura do QR/código → feedback **verde (liberado) / vermelho (negado)** com som e vibração, e feed das últimas validações.
 - Três formas de leitura: **câmera** (CameraX + ML Kit), **leitor USB-C** (HID, digita e envia Enter) e **digitação manual**.
 - Usa a **sessão** do operador (usuário/senha) e exige a permissão `acesso.validar`. Cada aparelho tem um **nome amigável** e um id de instalação, gravados na auditoria de acessos.
 - O endpoint `POST /api/access/app/validate` passou a **exigir sessão autenticada + `acesso.validar`** (antes estava aberto).

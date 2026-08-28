@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** Telas do app. */
-enum class Screen { Loading, Login, Setup, Scanner, Settings }
+enum class Screen { Loading, ServerSetup, Login, Setup, Scanner, Settings }
 
 /** Item do histórico de validações da sessão atual. */
 data class FeedItem(
@@ -46,6 +46,10 @@ data class UiState(
     val validating: Boolean = false,
     val feed: List<FeedItem> = emptyList(),
     val deviceLabel: String = "",
+    // teste de conexão na tela de servidor
+    val testingConnection: Boolean = false,
+    val connectionOk: Boolean = false,
+    val serverConfigured: Boolean = false,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -60,8 +64,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val base = repo.baseUrl()
             val label = repo.deviceLabel().orEmpty()
-            _state.update { it.copy(baseUrl = base, deviceLabel = label) }
-            // Tenta reaproveitar uma sessão salva.
+            val configured = repo.isServerConfigured()
+            _state.update { it.copy(baseUrl = base, deviceLabel = label, serverConfigured = configured) }
+
+            // Primeira execução (ou servidor ainda não configurado): pede o endereço antes de tudo.
+            if (!configured) {
+                _state.update { it.copy(screen = Screen.ServerSetup) }
+                return@launch
+            }
+
+            // Servidor já configurado: tenta reaproveitar uma sessão salva.
             when (val me = repo.currentSession()) {
                 is Outcome.Ok -> {
                     _state.update { it.copy(session = me.value) }
@@ -71,6 +83,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    /** Testa o endereço informado e, se responder, salva e avança para o login. */
+    fun testAndSaveServer(url: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(testingConnection = true, connectionOk = false, error = null) }
+            when (val res = repo.testConnection(url)) {
+                is Outcome.Ok -> {
+                    repo.markServerConfigured()
+                    _state.update {
+                        it.copy(
+                            testingConnection = false,
+                            connectionOk = true,
+                            serverConfigured = true,
+                            baseUrl = com.fastpass.validator.data.AppPreferences.normalizeBaseUrl(url),
+                            screen = Screen.Login,
+                        )
+                    }
+                }
+                is Outcome.Error -> _state.update {
+                    it.copy(
+                        testingConnection = false,
+                        connectionOk = false,
+                        error = "Não foi possível conectar: ${res.message}",
+                    )
+                }
+            }
+        }
+    }
+
+    /** Abre a tela de servidor manualmente (a partir do login). */
+    fun openServerSetup() = _state.update { it.copy(screen = Screen.ServerSetup, error = null) }
+
+    /** Volta da tela de servidor para o login (só quando já havia servidor configurado). */
+    fun cancelServerSetup() = _state.update { it.copy(screen = Screen.Login, error = null) }
 
     fun clearError() = _state.update { it.copy(error = null) }
 

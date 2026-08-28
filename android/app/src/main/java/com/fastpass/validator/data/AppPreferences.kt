@@ -23,6 +23,7 @@ class AppPreferences(private val context: Context) {
 
     private object Keys {
         val BASE_URL = stringPreferencesKey("base_url")
+        val SERVER_CONFIGURED = stringPreferencesKey("server_configured")
         val SESSION_COOKIE = stringPreferencesKey("session_cookie")
         val DEVICE_INSTALL_ID = stringPreferencesKey("device_install_id")
         val DEVICE_LABEL = stringPreferencesKey("device_label")
@@ -33,6 +34,16 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setBaseUrl(value: String) {
         context.dataStore.edit { it[Keys.BASE_URL] = normalizeBaseUrl(value) }
+    }
+
+    /** true depois que o usuário configurou/testou o servidor pela primeira vez. */
+    suspend fun isServerConfigured(): Boolean =
+        context.dataStore.data.first()[Keys.SERVER_CONFIGURED] == "1"
+
+    suspend fun setServerConfigured(value: Boolean) {
+        context.dataStore.edit {
+            if (value) it[Keys.SERVER_CONFIGURED] = "1" else it.remove(Keys.SERVER_CONFIGURED)
+        }
     }
 
     suspend fun sessionCookie(): String? =

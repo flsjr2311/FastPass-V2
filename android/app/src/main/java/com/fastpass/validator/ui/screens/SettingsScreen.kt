@@ -24,29 +24,18 @@ import com.fastpass.validator.ui.UiState
 @Composable
 fun SettingsScreen(
     state: UiState,
-    onSaveBaseUrl: (String) -> Unit,
     onSaveDeviceLabel: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    var url by remember { mutableStateOf(state.baseUrl) }
     var label by remember { mutableStateOf(state.deviceLabel) }
 
     Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-        Text("Configurações", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Configurações do aparelho", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(20.dp))
 
-        Text("Endereço da API", fontWeight = FontWeight.SemiBold)
-        Text(
-            "Ex.: http://10.0.2.2:5088 (emulador) ou o IP da máquina na rede.",
-            fontSize = 11.sp,
-        )
-        Spacer(Modifier.height(6.dp))
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Text("Servidor", fontWeight = FontWeight.SemiBold)
+        Text(state.baseUrl, fontSize = 12.sp)
+        Text("Para trocar o servidor, saia e use \"Trocar\" na tela de login.", fontSize = 11.sp)
         Spacer(Modifier.height(20.dp))
 
         Text("Nome deste aparelho", fontWeight = FontWeight.SemiBold)
@@ -62,7 +51,6 @@ fun SettingsScreen(
 
         Button(
             onClick = {
-                onSaveBaseUrl(url)
                 onSaveDeviceLabel(label)
                 onClose()
             },
