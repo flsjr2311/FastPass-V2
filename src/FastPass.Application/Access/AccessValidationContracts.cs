@@ -5,7 +5,7 @@ public sealed record ValidateAccessCommand(
     Guid EventId,
     Guid GateId,
     Guid? SectorId,
-    string Direction,
+    string? Direction,
     string IdempotencyKey,
     Guid? DeviceId = null,
     string Channel = "Turnstile");

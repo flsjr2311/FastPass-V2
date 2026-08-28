@@ -650,7 +650,7 @@ app.MapPost("/api/access/app/validate", async (ValidateAccessCommand command, IA
     try
     {
         var result = await svc.ValidateAsync(
-            command with { Channel = "App", Direction = AccessDirection.Entry.ToString(), DeviceId = null }, ct);
+            command with { Channel = "App", DeviceId = null }, ct);
         return Results.Ok(result);
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }

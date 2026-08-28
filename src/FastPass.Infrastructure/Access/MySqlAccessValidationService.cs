@@ -25,13 +25,7 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
     {
         Validate(command);
         var channel = ParseChannel(command.Channel);
-        var direction = ParseDirection(command.Direction);
         var now = DateTime.UtcNow;
-
-        if (channel == AccessChannel.App && direction != AccessDirection.Entry)
-        {
-            throw new ArgumentException("Validação por APP sempre usa a direção Entry.");
-        }
 
         if (channel == AccessChannel.App && command.DeviceId.HasValue)
         {
@@ -71,55 +65,27 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             throw new ArgumentException("DeviceId não encontrado, inativo ou pertencente a outra portaria.");
         }
 
-        if (channel == AccessChannel.Turnstile
-            && direction == AccessDirection.Exit
-            && gate.OperationMode == GateOperationMode.EntryValidatedExitFree)
+        // ── Inferir direção ──────────────────────────────────────────────────
+        // Se Direction veio explícita no comando, usa ela (compatibilidade).
+        // Senão, infere pelo GateOperationMode:
+        //   - EntryValidatedExitFree → sempre Entry (saída é mecânica, sem validação)
+        //   - EntryAndExitValidated → depende do estado do ticket (people_inside)
+        // A direção final será ajustada abaixo após ler o ticket, se necessário.
+        AccessDirection direction;
+        if (!string.IsNullOrWhiteSpace(command.Direction)
+            && Enum.TryParse<AccessDirection>(command.Direction, true, out var explicitDir))
         {
-            var resolvedFreeExitMessage = await _messageService.ResolveAsync(
-                command.EventId,
-                "ACESSO_CONCEDIDO",
-                null,
-                true,
-                cancellationToken);
-            var freeExit = BuildResult(
-                command,
-                channel,
-                direction,
-                approved: true,
-                credentialType: "FreeExit",
-                reason: null,
-                attemptId: Guid.NewGuid(),
-                ticketId: null,
-                maximumEntries: null,
-                entriesUsed: null,
-                peopleInside: null,
-                armAction: ArmAction.Unlock,
-                pictogram: AccessPictogram.GreenArrowExit,
-                resolvedMessage: resolvedFreeExitMessage);
-
-            await InsertAttemptAsync(
-                connection,
-                transaction,
-                command,
-                channel,
-                direction,
-                "FreeExit",
-                null,
-                null,
-                true,
-                null,
-                resolvedFreeExitMessage.Code,
-                resolvedFreeExitMessage.Message,
-                JsonSerializer.Serialize(resolvedFreeExitMessage.Presentation),
-                freeExit.AttemptId,
-                now,
-                null,
-                null,
-                null,
-                null,
-                cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return freeExit;
+            direction = explicitDir;
+        }
+        else if (gate.OperationMode == GateOperationMode.EntryValidatedExitFree)
+        {
+            direction = AccessDirection.Entry;
+        }
+        else
+        {
+            // EntryAndExitValidated: direção será definida após ler o ticket/credential
+            // Valor temporário — será sobrescrito em ValidateTicketAsync
+            direction = AccessDirection.Entry;
         }
 
         if (command.SectorId.HasValue && !await HasActiveSectorAsync(
@@ -163,6 +129,11 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         }
 
         var messageCode = ResolveMessageCode(decision.Reason, decision.Approved);
+
+        // Usa a direção inferida pelo ValidateTicketAsync (ou staff) se disponível
+        if (decision.InferredDirection.HasValue)
+            direction = decision.InferredDirection.Value;
+
         var resolvedMessage = await _messageService.ResolveAsync(
             command.EventId,
             messageCode,
@@ -328,6 +299,27 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
                 "Ingresso não encontrado.");
         }
 
+        // ── Inferir direção pelo estado do ticket e modo da portaria ─────────
+        // Se a portaria valida entrada e saída, a direção depende do estado:
+        //   - people_inside = 0 → entrada
+        //   - people_inside > 0 → saída
+        // Se a portaria só valida entrada (saída livre), sempre é entrada.
+        // Se Direction veio explícita no comando, já foi definida antes.
+        if (string.IsNullOrWhiteSpace(command.Direction))
+        {
+            if (operationMode == GateOperationMode.EntryValidatedExitFree)
+            {
+                direction = AccessDirection.Entry;
+            }
+            else
+            {
+                // EntryAndExitValidated: infere pelo estado do ticket
+                direction = ticket.PeopleInside > 0
+                    ? AccessDirection.Exit
+                    : AccessDirection.Entry;
+            }
+        }
+
         var entriesBefore = ticket.EntriesUsed;
         var peopleInsideBefore = ticket.PeopleInside;
         string? reason = null;
@@ -377,14 +369,13 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         {
             reason = "Limite de entradas do ingresso atingido.";
         }
-        else if (direction == AccessDirection.Exit && operationMode == GateOperationMode.EntryAndExitValidated && ticket.PeopleInside <= 0)
+        else if (direction == AccessDirection.Exit && ticket.PeopleInside <= 0)
         {
             reason = "Não há presença registrada para este ingresso.";
         }
         else
         {
-            var trackPresence = channel == AccessChannel.Turnstile
-                && operationMode == GateOperationMode.EntryAndExitValidated;
+            var trackPresence = operationMode == GateOperationMode.EntryAndExitValidated;
 
             if (direction == AccessDirection.Entry)
             {
@@ -429,8 +420,7 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             }
             else
             {
-                var updatePeopleInside = trackPresence;
-                if (updatePeopleInside)
+                if (trackPresence)
                 {
                     await using var update = connection.CreateCommand();
                     update.Transaction = transaction;
@@ -451,7 +441,7 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
                     approved = true;
                 }
 
-                if (approved && updatePeopleInside)
+                if (approved && trackPresence)
                 {
                     peopleInsideAfter--;
                 }
@@ -471,7 +461,8 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             entriesAfter,
             peopleInsideBefore,
             peopleInsideAfter,
-            reason);
+            reason,
+            direction);
     }
 
     private static async Task<GateData?> ReadGateAsync(
@@ -934,15 +925,10 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
             throw new ArgumentException("IdempotencyKey é obrigatório.");
         }
 
-        var channel = ParseChannel(command.Channel);
-        var direction = ParseDirection(command.Direction);
-        if (channel != AccessChannel.Turnstile
-            || direction != AccessDirection.Exit)
+        // CredentialCode é obrigatório exceto para saída livre (exit free)
+        if (string.IsNullOrWhiteSpace(command.CredentialCode))
         {
-            if (string.IsNullOrWhiteSpace(command.CredentialCode))
-            {
-                throw new ArgumentException("CredentialCode é obrigatório para esta validação.");
-            }
+            throw new ArgumentException("CredentialCode é obrigatório para esta validação.");
         }
     }
 
@@ -956,8 +942,11 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         throw new ArgumentException("Channel deve ser App ou Turnstile.");
     }
 
-    private static AccessDirection ParseDirection(string direction)
+    private static AccessDirection ParseDirection(string? direction)
     {
+        if (string.IsNullOrWhiteSpace(direction))
+            return AccessDirection.Entry; // fallback — será sobrescrito pela inferência
+
         if (Enum.TryParse<AccessDirection>(direction, true, out var result))
         {
             return result;
@@ -1007,5 +996,6 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         int? EntriesUsedAfter,
         int? PeopleInsideBefore,
         int? PeopleInsideAfter,
-        string? Reason);
+        string? Reason,
+        AccessDirection? InferredDirection = null);
 }
