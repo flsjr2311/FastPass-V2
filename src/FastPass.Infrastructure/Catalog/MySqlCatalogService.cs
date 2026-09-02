@@ -1165,6 +1165,61 @@ public sealed class MySqlCatalogService : ICatalogService
         return (await ListDevicesAsync(eventId, gateId, false, cancellationToken)).Single(item => item.Id == deviceId);
     }
 
+    public async Task<TurnstileDeviceResolution?> ResolveTurnstileDeviceAsync(
+        string identifier,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(identifier)) return null;
+
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // Resolve device ativo pelo identifier -> portaria ativa associada a um evento ativo.
+        // Se o mesmo identifier estiver associado a mais de um evento ativo (raro), prioriza
+        // o evento em andamento (Running) e o mais recente.
+        command.CommandText = """
+            SELECT d.id, d.name, d.identifier, d.device_type,
+                   g.id, g.name,
+                   e.id, e.name, e.status
+            FROM fp_devices d
+            INNER JOIN fp_gates g ON g.id = d.gate_id
+            INNER JOIN fp_event_gates eg ON eg.gate_id = d.gate_id AND eg.active = 1
+            INNER JOIN fp_events e ON e.id = eg.event_id
+            WHERE d.identifier = @identifier
+              AND d.active = 1
+              AND g.active = 1
+            ORDER BY (e.status = 'Running') DESC, e.starts_at DESC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@identifier", identifier.Trim());
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        return new TurnstileDeviceResolution(
+            ReadGuid(reader, 0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            ReadGuid(reader, 4),
+            reader.GetString(5),
+            ReadGuid(reader, 6),
+            reader.GetString(7),
+            reader.GetString(8));
+    }
+
+    public async Task TouchDeviceAsync(string identifier, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(identifier)) return;
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE fp_devices SET last_seen_at = @now WHERE identifier = @identifier;";
+        command.Parameters.AddWithValue("@now", DateTime.UtcNow);
+        command.Parameters.AddWithValue("@identifier", identifier.Trim());
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<TicketTypeView> CreateTicketTypeAsync(
         Guid eventId,
         CreateTicketTypeCommand command,

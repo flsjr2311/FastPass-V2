@@ -43,7 +43,7 @@ O FastPass V2 gerencia todo o ciclo de vida de controle de acesso em eventos: de
 | `FastPass.Application` | Class Library | Interfaces, contratos (commands/views), exceções |
 | `FastPass.Domain` | Class Library | Entidades e enums do domínio |
 | `FastPass.Infrastructure` | Class Library | Implementações MySQL, migrações, ADO.NET |
-| `FastPass.Worker` | Worker Service | Serviço de background (health-check, futuro: sync) |
+| `FastPass.Worker` | Worker Service | Health-check + serviço MQTT das catracas (recebe leitura, valida, comanda liberar/negar) |
 | `web/` | React + Vite | Painel web (dashboard, catálogo, tickets, auditoria, relatórios) |
 | `android/` | Kotlin + Compose | App de validação na portaria (câmera, leitor USB-C, manual) |
 
@@ -256,10 +256,17 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 - [x] Trilha de acessos ao sistema (login) e trilha de auditoria de ações (middleware)
 - [x] **App Android** — validação de ingressos (câmera/leitor USB-C/manual) com sessão do operador e identificação do aparelho
 
+### Em andamento
+- [~] **Integração MQTT com catracas** — fundação pronta no `FastPass.Worker` (conecta no broker,
+  recebe telemetria/leitura, valida via canal Turnstile e comanda liberar/negar). Falta confirmar
+  o protocolo de leitura/comando do firmware (Neon 1.2) e o teste fim-a-fim com a catraca girando.
+  Notas de engenharia reversa em `tools/mqtt/PROTOCOLO-INDIUM.md`.
+
 ### Prioridade Alta
+- [ ] Confirmar protocolo da placa (verbo/payload de leitura e de comando) e cadastrar a catraca como device `Mqtt`
+- [ ] Teste fim-a-fim MQTT: QR real → giro da catraca no sentido correto
 - [ ] **Integração com catracas Vcom** — comunicação serial/TCP com catracas USR-Vcom
-- [ ] **Integração MQTT** — comunicação com catracas via broker MQTT
-- [ ] **Worker funcional** — processamento do outbox de sync para dispositivos
+- [ ] **Worker de sync** — processamento do outbox para dispositivos
 - [ ] Compilar o app Android no Android Studio e validar em campo (câmera + leitor USB-C real)
 
 ### Prioridade Média

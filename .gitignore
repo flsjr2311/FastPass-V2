@@ -14,6 +14,10 @@ web/.vite/
 *.log
 npm-debug.log*
 
+# ── Captura MQTT (dev) — não versionar saídas de execução ─────────────────
+tools/mqtt/*.out
+tools/mqtt/*.err
+
 # ── Ambiente / segredos ────────────────────────────────────────────────────
 .env
 .env.local

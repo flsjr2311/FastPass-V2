@@ -108,6 +108,22 @@ public sealed record DeviceView(
     DateTimeOffset? LastSeenAt,
     string? ConfigurationJson);
 
+/// <summary>
+/// Resolução de um dispositivo (catraca) a partir do seu identifier — o "nome"
+/// que a placa envia via MQTT. Traz o vínculo device → portaria → evento,
+/// necessário para validar o acesso e comandar a catraca correta.
+/// </summary>
+public sealed record TurnstileDeviceResolution(
+    Guid DeviceId,
+    string DeviceName,
+    string Identifier,
+    string DeviceType,
+    Guid GateId,
+    string GateName,
+    Guid EventId,
+    string EventName,
+    string EventStatus);
+
 public sealed record CreateSectorCommand(
     string Name,
     int? Capacity = null);
@@ -294,6 +310,20 @@ public interface ICatalogService
         Guid gateId,
         Guid deviceId,
         UpdateDeviceCommand command,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolve um dispositivo pelo identifier (o "nome" que a catraca envia via MQTT),
+    /// trazendo portaria e evento vinculados. Retorna null se não houver device ativo
+    /// com esse identifier associado a um evento/portaria ativos.
+    /// </summary>
+    Task<TurnstileDeviceResolution?> ResolveTurnstileDeviceAsync(
+        string identifier,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Atualiza o last_seen_at do dispositivo (heartbeat). Silencioso se não existir.</summary>
+    Task TouchDeviceAsync(
+        string identifier,
         CancellationToken cancellationToken = default);
 
     Task<TicketTypeView> CreateTicketTypeAsync(

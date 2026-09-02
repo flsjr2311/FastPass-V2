@@ -1,0 +1,136 @@
+using System.Text.Json;
+using FastPass.Application.Access;
+
+namespace FastPass.Worker.Mqtt;
+
+/// <summary>Resultado do parse de uma mensagem publicada pela placa.</summary>
+public enum TurnstileInboundKind
+{
+    /// <summary>Telemetria (status/keepalive/info) — só atualiza heartbeat.</summary>
+    Telemetry,
+    /// <summary>Leitura de credencial (QR/cartão) — precisa validar e responder.</summary>
+    CredentialRead,
+    /// <summary>Não reconhecido — logar para engenharia reversa.</summary>
+    Unknown,
+}
+
+/// <summary>Dados extraídos de uma leitura de credencial.</summary>
+public sealed record TurnstileRead(string CredentialCode, string? RawReader);
+
+/// <summary>
+/// Ponto ÚNICO de tradução do protocolo da catraca ⇆ FastPass.
+///
+/// Aqui ficam as duas funções que dependem do firmware da placa:
+///   • Decode: interpretar o payload publicado pela placa (o que é telemetria,
+///     o que é leitura de credencial e como extrair o código lido).
+///   • Encode: montar o payload de comando (liberar/negar + sentido + display).
+///
+/// O que já é CONHECIDO (por captura de tráfego da Neon, firmware 1.0.35):
+///   - Payloads são JSON com um campo "cmd".
+///   - Telemetria observada: cmd ∈ { "status", "keepalive", "info" }.
+///
+/// O que ainda é A CONFIRMAR com a documentação da Neon 1.2:
+///   - Qual "cmd"/verbo chega quando a placa lê um QR/cartão e em qual campo vem o código.
+///   - Qual o formato do comando de liberação/negação que a placa espera no tópico "to".
+/// Enquanto não confirmado, o Decode reconhece a telemetria conhecida e tenta
+/// heurísticas para a leitura; o Encode produz um JSON provisório e legível.
+/// </summary>
+public sealed class TurnstileMessageCodec
+{
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
+
+    // Verbos de telemetria já observados na captura.
+    private static readonly HashSet<string> TelemetryCmds =
+        new(StringComparer.OrdinalIgnoreCase) { "status", "keepalive", "info" };
+
+    /// <summary>
+    /// Interpreta uma mensagem "from". Retorna o tipo e, se for leitura, os dados.
+    /// </summary>
+    public TurnstileInboundKind Decode(string verb, string payload, out TurnstileRead? read)
+    {
+        read = null;
+
+        // Telemetria pelo verbo do tópico (…/from/keepalive etc.).
+        if (TelemetryCmds.Contains(verb)) return TurnstileInboundKind.Telemetry;
+
+        // Tenta interpretar o corpo JSON.
+        JsonElement root;
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            root = doc.RootElement.Clone();
+        }
+        catch
+        {
+            // Payload não-JSON: pode ser o código cru terminado em <CR> vindo da UART.
+            var raw = payload.Trim().Trim('\r', '\n');
+            if (!string.IsNullOrEmpty(raw))
+            {
+                read = new TurnstileRead(raw, verb);
+                return TurnstileInboundKind.CredentialRead;
+            }
+            return TurnstileInboundKind.Unknown;
+        }
+
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            var cmd = root.TryGetProperty("cmd", out var cmdEl) && cmdEl.ValueKind == JsonValueKind.String
+                ? cmdEl.GetString()
+                : null;
+
+            if (!string.IsNullOrEmpty(cmd) && TelemetryCmds.Contains(cmd))
+                return TurnstileInboundKind.Telemetry;
+
+            // TODO(Neon 1.2): confirmar o "cmd" de leitura e o nome do campo do código.
+            // Heurística: procura o código em campos comuns.
+            var code = FirstString(root, "code", "qrcode", "qr", "card", "cardnumber", "credential", "data", "value");
+            if (!string.IsNullOrWhiteSpace(code))
+            {
+                read = new TurnstileRead(code!.Trim(), cmd);
+                return TurnstileInboundKind.CredentialRead;
+            }
+
+            return TurnstileInboundKind.Unknown;
+        }
+
+        return TurnstileInboundKind.Unknown;
+    }
+
+    /// <summary>
+    /// Monta o comando de resposta para a placa a partir do resultado da validação.
+    /// Retorna (verbo, payload) — o verbo compõe o tópico "…/to/&lt;verbo&gt;".
+    ///
+    /// TODO(Neon 1.2): ajustar verbo e formato conforme a documentação. O formato
+    /// abaixo é provisório, legível e reflete a DECISÃO já tomada pelo FastPass
+    /// (liberar/negar, sentido, pictograma e mensagem de display).
+    /// </summary>
+    public (string Verb, string Payload) EncodeCommand(AccessValidationResult result)
+    {
+        var release = string.Equals(result.ArmAction, "Unlock", StringComparison.OrdinalIgnoreCase);
+        var command = new
+        {
+            cmd = "access",
+            authorized = result.Approved,
+            release,                              // aciona o relé LOCK quando true
+            direction = result.Direction,          // Entry | Exit — sentido a liberar
+            pictogram = result.Pictogram,          // GreenArrowEntry | GreenArrowExit | RedCross
+            reasonCode = result.ReasonCode,
+            message = result.Message,              // texto para o display
+            attemptId = result.AttemptId,
+        };
+        return ("access", JsonSerializer.Serialize(command, JsonOpts));
+    }
+
+    private static string? FirstString(JsonElement obj, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (obj.TryGetProperty(name, out var el))
+            {
+                if (el.ValueKind == JsonValueKind.String) return el.GetString();
+                if (el.ValueKind == JsonValueKind.Number) return el.GetRawText();
+            }
+        }
+        return null;
+    }
+}

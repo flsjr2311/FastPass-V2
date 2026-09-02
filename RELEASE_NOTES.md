@@ -69,8 +69,15 @@ Rodada de correções, refinamentos operacionais e limpeza estrutural preparando
 - Correção do proxy Vite para a porta atual da API (5088).
 - Menu lateral em **accordion** (um grupo aberto por vez, fechados por padrão) e sidebar fixa sem estouro de tela.
 
+#### Integração MQTT com catracas (fundação)
+- Novo serviço MQTT hospedado no **FastPass.Worker** (MQTTnet): conecta ao broker, escuta as catracas (`<Facility>/<Device>/from/#`), atualiza o heartbeat do dispositivo e, ao receber uma leitura, valida pelo canal **Turnstile** (que infere o sentido) e publica o comando de liberar/negar no tópico `.../to/...`.
+- A catraca envia apenas `{código lido, nome da catraca}`; a relação catraca↔portaria e o sentido a liberar são decididos pelo servidor. O "nome da catraca" é o `identifier` do device (`device_type = Mqtt`), que resolve portaria e evento.
+- Tradução do protocolo isolada em um único ponto (`TurnstileMessageCodec`), pronta para ajuste fino quando a documentação do firmware for confirmada. Notas de engenharia reversa em `tools/mqtt/PROTOCOLO-INDIUM.md`.
+- Config na seção `Mqtt` do `appsettings` (broker, porta, credenciais, FacilityId), com liga/desliga por `Mqtt:Enabled`.
+
 #### Ferramentas
 - Script de teste de carga inteligente (`tools/load-test`): envia cada ticket para a portaria correta do seu setor e simula ~10% de erros (código inexistente, ticket cancelado, portaria errada, reentrada).
+- Ambiente de captura MQTT (`tools/mqtt`): config do broker Mosquitto de desenvolvimento e notas do protocolo das catracas.
 
 ---
 
