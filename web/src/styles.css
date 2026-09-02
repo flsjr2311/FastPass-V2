@@ -314,3 +314,22 @@ td[colspan] { white-space: normal; }
 .audit-pager button:disabled { cursor: not-allowed; opacity: .45; }
 .mono-cell { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; color: #6b7a92; }
 @media (max-width: 720px) { .audit-toolbar { flex-direction: column; align-items: stretch; }.audit-field input, .audit-field select { min-width: 0; width: 100%; } }
+
+/* ── Monitoramento de catracas ── */
+.turnstile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; padding: 4px 24px 22px; }
+.turnstile-card { border: 1px solid #e7ebf2; border-radius: 11px; background: #fff; padding: 16px; box-shadow: 0 3px 12px #15264a04; }
+.turnstile-card.offline { opacity: .72; }
+.turnstile-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.turnstile-name { font-weight: 800; color: #1e2d45; font-size: 14px; }
+.turnstile-live { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.turnstile-live .dot { width: 9px; height: 9px; border-radius: 50%; }
+.turnstile-live.on { color: #1eae7e; }
+.turnstile-live.on .dot { background: #1eae7e; box-shadow: 0 0 0 3px #1eae7e22; }
+.turnstile-live.off { color: #98a4b5; }
+.turnstile-live.off .dot { background: #c6ced9; }
+.turnstile-meta { display: flex; flex-direction: column; gap: 4px; color: #7a8699; font-size: 11px; }
+.turnstile-meta b { color: #46566f; font-weight: 700; }
+.turnstile-assign { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #edf0f5; font-size: 11px; }
+.turnstile-assign .assigned { color: #46566f; }
+.turnstile-assign .assigned strong { color: #2d3c55; }
+.turnstile-assign .unassigned { display: inline-flex; align-items: center; gap: 6px; color: #b4842f; background: #fdf6e7; border: 1px solid #f0e2c0; border-radius: 6px; padding: 5px 9px; font-weight: 700; }

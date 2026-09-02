@@ -22,6 +22,7 @@ import type {
   VenueView,
   LoginLogEntry,
   AuditTrailEntry,
+  TurnstileMonitorView,
 } from './types';
 
 const emptySummary: AttemptSummary = {
@@ -43,6 +44,7 @@ const screenLabels: Record<Screen, { label: string; icon: string; description: s
   clients:       { label: 'Clientes',            icon: '◧', description: 'Organizadores e clientes vinculados aos eventos', group: 'cadastro', perm: 'cliente.gerenciar' },
   events:        { label: 'Eventos',             icon: '◈', description: 'Agenda e configuração de eventos',                group: 'cadastro', perm: 'evento.criar' },
   configuration: { label: 'Portarias e Setores', icon: '⚙', description: 'Portarias, setores e regras de circulação',       group: 'operacao', perm: 'portaria.gerenciar' },
+  turnstiles:    { label: 'Catracas',            icon: '⊟', description: 'Monitoramento das catracas: status e atribuição',  group: 'operacao', perm: 'dispositivo.gerenciar' },
   manualValidation: { label: 'Validação Manual', icon: '✋', description: 'Liberação manual de acesso (backstage, exceções, falhas)', group: 'operacao', perm: 'acesso.validar' },
   tickets:       { label: 'Tickets',             icon: '▣', description: 'Ingressos emitidos e utilização',                 group: 'operacao', perm: 'ticket.consultar' },
   reports:       { label: 'Relatórios',          icon: '◈', description: 'Métricas, cobertura e análise de rejeições',      group: 'operacao', perm: 'relatorio.ler' },
@@ -103,7 +105,7 @@ function EmptyState({ message }: { message: string }) {
 
 const navGroups: { key: string; label: string; items: Screen[] }[] = [
   { key: 'cadastro', label: 'CADASTRO', items: ['clients', 'events'] },
-  { key: 'operacao', label: 'OPERAÇÃO', items: ['configuration', 'manualValidation', 'tickets', 'reports'] },
+  { key: 'operacao', label: 'OPERAÇÃO', items: ['configuration', 'turnstiles', 'manualValidation', 'tickets', 'reports'] },
   { key: 'logs', label: 'LOGS', items: ['audit', 'loginLog', 'auditTrail', 'importLogs'] },
   { key: 'admin', label: 'ADMINISTRAÇÃO', items: ['import', 'users', 'messages'] },
 ];
@@ -298,6 +300,7 @@ function App() {
               {screen === 'loginLog' && <LoginLogView />}
               {screen === 'auditTrail' && <AuditTrailView />}
               {screen === 'configuration' && <ConfigurationView eventId={selectedEventId} />}
+              {screen === 'turnstiles' && <TurnstilesView />}
               {screen === 'messages' && <MessagesView eventId={selectedEventId} />}
               {screen === 'users' && <UsersView />}
               {screen === 'import' && <ImportView eventId={selectedEventId} />}
@@ -1293,6 +1296,76 @@ function AuditView({ attempts, loading }: { attempts: AttemptPage | null; loadin
 function AttemptTable({ attempts, expanded = false }: { attempts: AttemptPage['data']; expanded?: boolean }) {
   if (attempts.length === 0) return <EmptyState message="Ainda não há tentativas de acesso registradas." />;
   return <div className="table-scroll"><table><thead><tr><th>Horário</th><th>Credencial</th><th>Portaria / setor</th><th>Setor do ingresso</th><th>Direção</th><th>Decisão</th><th>{expanded ? 'Motivo' : 'Status'}</th></tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.attemptId}><td>{formatDate(attempt.requestedAt || attempt.createdAt, true)}</td><td><strong>{attempt.credentialType === 'StaffBadge' ? attempt.staffName || 'Crachá de usuário' : attempt.ticketExternalId || 'Ingresso'}</strong>{attempt.channel === 'Manual' && <span className="message-badge customized" style={{ marginLeft: 6, fontSize: 9 }}>✋ Manual</span>}{attempt.channel === 'App' && <span className="message-badge customized" style={{ marginLeft: 6, fontSize: 9 }}>📱 App</span>}<small className="table-id">{attempt.credentialCodeMasked}</small>{attempt.appDeviceLabel && <small className="muted-text">{attempt.appDeviceLabel}</small>}</td><td><strong>{attempt.gateName || 'Portaria não informada'}</strong><small>{attempt.sectorName || 'Setor não informado'}</small></td><td>{attempt.ticketSectorName || '—'}</td><td><span className="direction">{attempt.direction === 'Entry' ? '↓ Entrada' : '↑ Saída'}</span></td><td><StatusBadge value={attempt.decision} /></td><td>{expanded ? attempt.reason || '—' : <span className="muted-text">{attempt.status}</span>}</td></tr>)}</tbody></table></div>;
+}
+
+/** Painel de monitoramento das catracas MQTT. Auto-atualiza a cada 10s. */
+function TurnstilesView() {
+  const [items, setItems] = useState<TurnstileMonitorView[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const data = await api.listTurnstiles();
+        if (alive) { setItems(data); setError(null); setRefreshedAt(new Date()); }
+      } catch (e: unknown) {
+        if (alive) setError(e instanceof Error ? e.message : 'Erro ao carregar catracas.');
+      }
+    }
+    load();
+    const timer = setInterval(load, 10000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
+
+  const online = items?.filter((t) => t.online).length ?? 0;
+  const unassigned = items?.filter((t) => !t.deviceRegistrationId).length ?? 0;
+
+  return <section className="panel full-panel">
+    <div className="panel-heading">
+      <div>
+        <p className="panel-kicker">MONITORAMENTO</p>
+        <h2>Catracas</h2>
+        <p className="panel-subtitle">
+          {items ? `${items.length} catraca(s) · ${online} online · ${unassigned} sem atribuição` : 'Placas identificadas via MQTT.'}
+          {refreshedAt && ` · atualizado ${formatDate(refreshedAt.toISOString(), true)}`}
+        </p>
+      </div>
+    </div>
+    {error && <div className="alert-error"><span>{error}</span></div>}
+    {items === null
+      ? <div className="table-loading"><span className="spinner" />Carregando...</div>
+      : items.length === 0
+        ? <EmptyState message="Nenhuma catraca se conectou ainda. Aponte a placa para o broker MQTT." />
+        : <div className="turnstile-grid">
+            {items.map((t) => <TurnstileCard key={t.deviceId} t={t} />)}
+          </div>}
+  </section>;
+}
+
+function TurnstileCard({ t }: { t: TurnstileMonitorView }) {
+  const assigned = Boolean(t.deviceRegistrationId && t.gateId);
+  return <article className={`turnstile-card ${t.online ? '' : 'offline'}`}>
+    <div className="turnstile-head">
+      <span className="turnstile-name">{t.deviceName || t.deviceId}</span>
+      <span className={`turnstile-live ${t.online ? 'on' : 'off'}`}>
+        <span className="dot" />{t.online ? 'Online' : 'Offline'}
+      </span>
+    </div>
+    <div className="turnstile-meta">
+      <span>ID MQTT: <b>{t.deviceId}</b></span>
+      {t.firmware && <span>Firmware: <b>{t.firmware}</b></span>}
+      {t.ipLocal && <span>IP: <b>{t.ipLocal}</b>{t.media ? ` (${t.media})` : ''}</span>}
+      {t.serialId && <span>Série: <b>{t.serialId}</b></span>}
+      <span>Visto por último: <b>{formatDate(t.lastSeenAt, true)}</b></span>
+    </div>
+    <div className="turnstile-assign">
+      {assigned
+        ? <span className="assigned">Atribuída a <strong>{t.gateName}</strong>{t.eventName ? <> · evento <strong>{t.eventName}</strong></> : ''}{t.deviceActive === false ? ' · (cadastro inativo)' : ''}</span>
+        : <span className="unassigned">⚠ Não atribuída a nenhuma portaria</span>}
+    </div>
+  </article>;
 }
 
 /** Rótulo legível e tom visual para o desfecho de um login. */

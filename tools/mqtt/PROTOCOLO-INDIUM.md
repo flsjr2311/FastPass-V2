@@ -89,8 +89,18 @@ Config para ligar/desligar: `Mqtt:Enabled`. Requer fonte NuGet nuget.org (foi ad
 - Um publish de teste em `.../from/access` foi processado: resolveu device, não achou cadastro
   (esperado — a catraca ainda não foi cadastrada em fp_devices) e logou claramente.
 
+## Monitoramento de catracas (painel) — FEITO
+- Tabela `fp_turnstile_presence` (migração 022): registra toda placa vista no MQTT (device_id,
+  status, first/last_seen, firmware, board_id, serial_id, ip_local, media) — independente de cadastro.
+- Worker: o `TurnstileMessageCodec.Decode` agora extrai os metadados do `info` (antes descartados);
+  o `MqttTurnstileService` faz upsert da presença a cada telemetria/leitura (`ITurnstileMonitoringService`).
+- API: `GET /api/turnstiles` (perm `dispositivo.gerenciar`) cruza presença × `fp_devices` (por
+  identifier) × portaria/evento; `online` = last_seen dentro de 90s.
+- Frontend: tela **Catracas** (grupo Operação) com cards — nome, online/offline, firmware/IP/série,
+  e a portaria/evento atribuídos (ou aviso "não atribuída"). Auto-refresh 10s.
+- Validado com a placa real: apareceu como online, firmware 1.0.35, ip 192.168.15.9, board neon025156;
+  ao cadastrar como device Mqtt (identifier=`Catraca 151`) o painel passou a mostrar portaria/evento.
+
 ## PENDENTE (quando a doc Neon 1.2 / leitor chegarem)
 1. Confirmar o verbo/payload de LEITURA e o de COMANDO → ajustar `TurnstileMessageCodec`.
-2. Cadastrar a catraca como device `Mqtt` no FastPass com `identifier` = Device ID MQTT
-   (ex.: `Catraca 151`), vinculada a uma portaria de um evento.
-3. Teste fim-a-fim: QR real → catraca gira (relé LOCK) no sentido correto.
+2. Teste fim-a-fim: QR real → catraca gira (relé LOCK) no sentido correto.

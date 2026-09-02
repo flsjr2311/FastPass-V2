@@ -22,6 +22,7 @@
   VenueView,
   LoginLogPage,
   AuditTrailPage,
+  TurnstileMonitorView,
 } from './types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
@@ -83,6 +84,9 @@ export const api = {
     request<LoginLogPage>(`/api/login-log?${buildQuery(params)}`),
   listAuditTrail: (params: { page?: number; pageSize?: number; userName?: string; action?: string; from?: string; to?: string } = {}) =>
     request<AuditTrailPage>(`/api/audit-trail?${buildQuery(params)}`),
+  // ── Monitoramento de catracas ──────────────────────────────────────────────
+  listTurnstiles: (onlineWindowSeconds?: number) =>
+    request<TurnstileMonitorView[]>(`/api/turnstiles?${buildQuery({ onlineWindowSeconds })}`),
   listRoles: () => request<RoleView[]>('/api/roles'),
   createRole: (payload: { name: string; description?: string }) =>
     request<RoleView>('/api/roles', { method: 'POST', body: JSON.stringify(payload) }),

@@ -198,6 +198,7 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 | 019 | Trilha de acessos ao sistema (`fp_login_log`) |
 | 020 | Trilha de auditoria de ações (`fp_audit_trail`) |
 | 021 | Identificação do aparelho do app em `fp_access_attempts` |
+| 022 | Presença de catracas MQTT (`fp_turnstile_presence`) para o painel de monitoramento |
 
 ## Endpoints Principais
 
@@ -240,6 +241,7 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 | POST | `/api/users/{id}/reset-password` | Reset de senha por admin (requer `usuario.gerenciar`) |
 | GET | `/api/login-log` | Trilha de acessos ao sistema (requer `auditoria.ler`) |
 | GET | `/api/audit-trail` | Trilha de auditoria de ações (requer `auditoria.ler`) |
+| GET | `/api/turnstiles` | Monitoramento de catracas MQTT (requer `dispositivo.gerenciar`) |
 
 ## Pendências e Roadmap
 
@@ -258,9 +260,10 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 
 ### Em andamento
 - [~] **Integração MQTT com catracas** — fundação pronta no `FastPass.Worker` (conecta no broker,
-  recebe telemetria/leitura, valida via canal Turnstile e comanda liberar/negar). Falta confirmar
-  o protocolo de leitura/comando do firmware (Neon 1.2) e o teste fim-a-fim com a catraca girando.
-  Notas de engenharia reversa em `tools/mqtt/PROTOCOLO-INDIUM.md`.
+  recebe telemetria/leitura, valida via canal Turnstile e comanda liberar/negar) + **painel de
+  monitoramento** (tela "Catracas": placas identificadas, online/offline, firmware/IP e atribuição
+  a portaria/evento). Falta confirmar o protocolo de leitura/comando do firmware (Neon 1.2) e o
+  teste fim-a-fim com a catraca girando. Notas em `tools/mqtt/PROTOCOLO-INDIUM.md`.
 
 ### Prioridade Alta
 - [ ] Confirmar protocolo da placa (verbo/payload de leitura e de comando) e cadastrar a catraca como device `Mqtt`

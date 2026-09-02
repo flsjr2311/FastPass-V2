@@ -30,6 +30,7 @@ builder.Services.AddSingleton<IAccessPolicyService, MySqlAccessPolicyService>();
 builder.Services.AddSingleton<IAccessMessageService, MySqlAccessMessageService>();
 builder.Services.AddSingleton<IAccessAttemptQueryService, MySqlAccessAttemptQueryService>();
 builder.Services.AddSingleton<IAccessValidationService, MySqlAccessValidationService>();
+builder.Services.AddSingleton<ITurnstileMonitoringService, MySqlTurnstileMonitoringService>();
 builder.Services.AddScoped<ITicketImportService, MySqlTicketImportService>();
 builder.Services.AddSingleton<IValidationReportService, MySqlValidationReportService>();
 builder.Services.AddSingleton<IAuditTrailService, MySqlAuditTrailService>();
@@ -397,6 +398,14 @@ app.MapPut("/api/events/{eventId:guid}/gates/{gateId:guid}/devices/{deviceId:gui
     try { return Results.Ok(await svc.UpdateDeviceAsync(eventId, gateId, deviceId, command, ct)); }
     catch (CatalogConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
+// Monitoramento GLOBAL de catracas MQTT: todas as placas já vistas (mesmo não cadastradas),
+// status online/offline, firmware/IP e a portaria/evento a que estão atribuídas.
+app.MapGet("/api/turnstiles", async (int? onlineWindowSeconds, ITurnstileMonitoringService svc, HttpContext ctx, CancellationToken ct) =>
+{
+    if (ctx.RequirePermission("dispositivo.gerenciar") is { } e) return e;
+    return Results.Ok(await svc.ListAsync(onlineWindowSeconds ?? 90, ct));
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

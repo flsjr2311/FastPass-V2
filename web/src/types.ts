@@ -1,4 +1,24 @@
-export type Screen = 'dashboard' | 'events' | 'tickets' | 'audit' | 'configuration' | 'messages' | 'users' | 'import' | 'importLogs' | 'reports' | 'admin' | 'clients' | 'manualValidation' | 'loginLog' | 'auditTrail';
+export type Screen = 'dashboard' | 'events' | 'tickets' | 'audit' | 'configuration' | 'messages' | 'users' | 'import' | 'importLogs' | 'reports' | 'admin' | 'clients' | 'manualValidation' | 'loginLog' | 'auditTrail' | 'turnstiles';
+
+export interface TurnstileMonitorView {
+  deviceId: string;
+  status: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  online: boolean;
+  firmware?: string | null;
+  boardId?: string | null;
+  serialId?: string | null;
+  ipLocal?: string | null;
+  media?: string | null;
+  deviceRegistrationId?: string | null;
+  deviceName?: string | null;
+  deviceActive?: boolean | null;
+  gateId?: string | null;
+  gateName?: string | null;
+  eventId?: string | null;
+  eventName?: string | null;
+}
 
 export interface LoginLogEntry {
   id: string;

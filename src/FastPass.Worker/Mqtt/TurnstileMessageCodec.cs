@@ -18,6 +18,18 @@ public enum TurnstileInboundKind
 public sealed record TurnstileRead(string CredentialCode, string? RawReader);
 
 /// <summary>
+/// Metadados de telemetria da placa. Todos opcionais — o keepalive traz pouco,
+/// o "info" traz firmware/serial/IP/mídia. Status vem do verbo/campo status.
+/// </summary>
+public sealed record TurnstileTelemetry(
+    string? Status,
+    string? Firmware,
+    string? BoardId,
+    string? SerialId,
+    string? IpLocal,
+    string? Media);
+
+/// <summary>
 /// Ponto ÚNICO de tradução do protocolo da catraca ⇆ FastPass.
 ///
 /// Aqui ficam as duas funções que dependem do firmware da placa:
@@ -44,42 +56,43 @@ public sealed class TurnstileMessageCodec
         new(StringComparer.OrdinalIgnoreCase) { "status", "keepalive", "info" };
 
     /// <summary>
-    /// Interpreta uma mensagem "from". Retorna o tipo e, se for leitura, os dados.
+    /// Interpreta uma mensagem "from". Retorna o tipo e, conforme o caso, os dados
+    /// da leitura (read) ou os metadados de telemetria (telemetry).
     /// </summary>
-    public TurnstileInboundKind Decode(string verb, string payload, out TurnstileRead? read)
+    public TurnstileInboundKind Decode(
+        string verb, string payload, out TurnstileRead? read, out TurnstileTelemetry? telemetry)
     {
         read = null;
+        telemetry = null;
 
-        // Telemetria pelo verbo do tópico (…/from/keepalive etc.).
-        if (TelemetryCmds.Contains(verb)) return TurnstileInboundKind.Telemetry;
-
-        // Tenta interpretar o corpo JSON.
+        // Tenta interpretar o corpo JSON (a telemetria da placa é sempre JSON).
         JsonElement root;
+        var isJsonObject = false;
         try
         {
             using var doc = JsonDocument.Parse(payload);
             root = doc.RootElement.Clone();
+            isJsonObject = root.ValueKind == JsonValueKind.Object;
         }
         catch
         {
-            // Payload não-JSON: pode ser o código cru terminado em <CR> vindo da UART.
-            var raw = payload.Trim().Trim('\r', '\n');
-            if (!string.IsNullOrEmpty(raw))
-            {
-                read = new TurnstileRead(raw, verb);
-                return TurnstileInboundKind.CredentialRead;
-            }
-            return TurnstileInboundKind.Unknown;
+            root = default;
         }
 
-        if (root.ValueKind == JsonValueKind.Object)
+        // Telemetria pelo verbo do tópico (…/from/keepalive|status|info).
+        var telemetryByVerb = TelemetryCmds.Contains(verb);
+
+        if (isJsonObject)
         {
             var cmd = root.TryGetProperty("cmd", out var cmdEl) && cmdEl.ValueKind == JsonValueKind.String
                 ? cmdEl.GetString()
                 : null;
 
-            if (!string.IsNullOrEmpty(cmd) && TelemetryCmds.Contains(cmd))
+            if (telemetryByVerb || (!string.IsNullOrEmpty(cmd) && TelemetryCmds.Contains(cmd)))
+            {
+                telemetry = ExtractTelemetry(root);
                 return TurnstileInboundKind.Telemetry;
+            }
 
             // TODO(Neon 1.2): confirmar o "cmd" de leitura e o nome do campo do código.
             // Heurística: procura o código em campos comuns.
@@ -93,8 +106,31 @@ public sealed class TurnstileMessageCodec
             return TurnstileInboundKind.Unknown;
         }
 
+        // Corpo não-JSON.
+        if (telemetryByVerb)
+        {
+            telemetry = new TurnstileTelemetry(null, null, null, null, null, null);
+            return TurnstileInboundKind.Telemetry;
+        }
+
+        // Pode ser o código cru terminado em <CR> vindo da UART.
+        var raw = payload.Trim().Trim('\r', '\n');
+        if (!string.IsNullOrEmpty(raw))
+        {
+            read = new TurnstileRead(raw, verb);
+            return TurnstileInboundKind.CredentialRead;
+        }
+
         return TurnstileInboundKind.Unknown;
     }
+
+    private static TurnstileTelemetry ExtractTelemetry(JsonElement root) => new(
+        Status: FirstString(root, "status"),
+        Firmware: FirstString(root, "version", "firmware"),
+        BoardId: FirstString(root, "boardid", "board_id"),
+        SerialId: FirstString(root, "serialid", "serial_id", "serial"),
+        IpLocal: FirstString(root, "iplocal", "ip_local", "ip"),
+        Media: FirstString(root, "media"));
 
     /// <summary>
     /// Monta o comando de resposta para a placa a partir do resultado da validação.

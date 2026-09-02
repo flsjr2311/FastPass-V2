@@ -25,6 +25,7 @@ builder.Services.AddSingleton<ICatalogService, MySqlCatalogService>();
 builder.Services.AddSingleton<IAccessPolicyService, MySqlAccessPolicyService>();
 builder.Services.AddSingleton<IAccessMessageService, MySqlAccessMessageService>();
 builder.Services.AddSingleton<IAccessValidationService, MySqlAccessValidationService>();
+builder.Services.AddSingleton<ITurnstileMonitoringService, MySqlTurnstileMonitoringService>();
 
 // Configuração e serviço MQTT das catracas.
 builder.Services.Configure<MqttOptions>(builder.Configuration.GetSection(MqttOptions.SectionName));

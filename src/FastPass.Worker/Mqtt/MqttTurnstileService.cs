@@ -125,14 +125,17 @@ public sealed class MqttTurnstileService : BackgroundService
 
         try
         {
-            var kind = _codec.Decode(verb, payload, out var read);
+            var kind = _codec.Decode(verb, payload, out var read, out var telemetry);
             switch (kind)
             {
                 case TurnstileInboundKind.Telemetry:
+                    await RecordPresenceAsync(deviceId, telemetry);
                     await TouchDeviceAsync(deviceId);
                     break;
 
                 case TurnstileInboundKind.CredentialRead when read is not null:
+                    // Uma leitura também prova que a placa está viva/online.
+                    await RecordPresenceAsync(deviceId, null);
                     await HandleReadAsync(deviceId, read);
                     break;
 
@@ -197,6 +200,28 @@ public sealed class MqttTurnstileService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Falha ao atualizar last_seen de '{Device}'.", deviceId);
+        }
+    }
+
+    /// <summary>Registra a presença da catraca no painel de monitoramento (best-effort).</summary>
+    private async Task RecordPresenceAsync(string deviceId, TurnstileTelemetry? telemetry)
+    {
+        try
+        {
+            using var scope = _services.CreateScope();
+            var monitoring = scope.ServiceProvider.GetRequiredService<ITurnstileMonitoringService>();
+            await monitoring.RecordPresenceAsync(new TurnstilePresenceUpdate(
+                DeviceId: deviceId,
+                Status: telemetry?.Status,
+                Firmware: telemetry?.Firmware,
+                BoardId: telemetry?.BoardId,
+                SerialId: telemetry?.SerialId,
+                IpLocal: telemetry?.IpLocal,
+                Media: telemetry?.Media));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Falha ao registrar presença de '{Device}'.", deviceId);
         }
     }
 
