@@ -56,43 +56,55 @@ public sealed class MqttTurnstileService : BackgroundService
         _client = factory.CreateMqttClient();
         _client.ApplicationMessageReceivedAsync += OnMessageAsync;
 
-        var clientOptions = new MqttClientOptionsBuilder()
-            .WithClientId(_options.ClientId)
+        // Ao (re)conectar, re-assina o filtro — essencial após qualquer queda/reconexão.
+        _client.ConnectedAsync += async _ =>
+        {
+            try
+            {
+                await _client.SubscribeAsync(
+                    new MqttClientSubscribeOptionsBuilder()
+                        .WithTopicFilter(_topics.SubscribeFromAll)
+                        .Build());
+                _logger.LogInformation("Conectado ao broker. Assinando '{Filter}'.", _topics.SubscribeFromAll);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Falha ao assinar após conectar.");
+            }
+        };
+
+        _client.DisconnectedAsync += e =>
+        {
+            _logger.LogWarning("Desconectado do broker MQTT ({Reason}). Reconectando...", e.Reason);
+            return Task.CompletedTask;
+        };
+
+        // ClientId único por execução evita colisão/derrubada de sessão no broker.
+        var clientId = $"{_options.ClientId}-{Guid.NewGuid():N}";
+        var optionsBuilder = new MqttClientOptionsBuilder()
+            .WithClientId(clientId)
             .WithTcpServer(_options.Host, _options.Port)
             .WithCleanSession()
-            .Build();
+            .WithKeepAlivePeriod(TimeSpan.FromSeconds(30));
 
         if (!string.IsNullOrWhiteSpace(_options.Username))
         {
-            clientOptions = new MqttClientOptionsBuilder()
-                .WithClientId(_options.ClientId)
-                .WithTcpServer(_options.Host, _options.Port)
-                .WithCredentials(_options.Username, _options.Password)
-                .WithCleanSession()
-                .Build();
+            optionsBuilder = optionsBuilder.WithCredentials(_options.Username, _options.Password);
         }
 
-        // Loop de conexão com reconexão automática.
+        var clientOptions = optionsBuilder.Build();
+
+        // Loop supervisor: garante a conexão viva; reconecta sempre que cair.
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                if (_client.IsConnected)
+                if (!_client.IsConnected)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-                    continue;
+                    _logger.LogInformation("Conectando ao broker MQTT {Host}:{Port}...", _options.Host, _options.Port);
+                    await _client.ConnectAsync(clientOptions, stoppingToken);
+                    // A assinatura acontece no handler ConnectedAsync.
                 }
-
-                _logger.LogInformation("Conectando ao broker MQTT {Host}:{Port}...", _options.Host, _options.Port);
-                await _client.ConnectAsync(clientOptions, stoppingToken);
-
-                await _client.SubscribeAsync(
-                    new MqttClientSubscribeOptionsBuilder()
-                        .WithTopicFilter(_topics.SubscribeFromAll)
-                        .Build(),
-                    stoppingToken);
-
-                _logger.LogInformation("Conectado. Assinando '{Filter}'.", _topics.SubscribeFromAll);
             }
             catch (OperationCanceledException)
             {
@@ -100,11 +112,12 @@ public sealed class MqttTurnstileService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Falha ao conectar/assinar no broker MQTT. Retry em {Delay}s.",
+                _logger.LogWarning(ex, "Falha ao conectar no broker MQTT. Retry em {Delay}s.",
                     _options.ReconnectDelaySeconds);
-                try { await Task.Delay(TimeSpan.FromSeconds(_options.ReconnectDelaySeconds), stoppingToken); }
-                catch (OperationCanceledException) { break; }
             }
+
+            try { await Task.Delay(TimeSpan.FromSeconds(_options.ReconnectDelaySeconds), stoppingToken); }
+            catch (OperationCanceledException) { break; }
         }
 
         try { if (_client.IsConnected) await _client.DisconnectAsync(); } catch { /* ignore */ }
@@ -123,14 +136,28 @@ public sealed class MqttTurnstileService : BackgroundService
             return;
         }
 
+        // Mensagens RETIDAS são histórico que o broker re-entrega ao (re)assinar —
+        // não representam a placa "ao vivo". Ex.: o Last Will "disconnected" fica retido
+        // e reapareceria a cada reconexão, marcando a catraca como offline indevidamente.
+        var retained = e.ApplicationMessage.Retain;
+
         try
         {
             var kind = _codec.Decode(verb, payload, out var read, out var telemetry);
             switch (kind)
             {
                 case TurnstileInboundKind.Telemetry:
-                    await RecordPresenceAsync(deviceId, telemetry);
-                    await TouchDeviceAsync(deviceId);
+                    // Só telemetria AO VIVO conta como presença. Retida atualiza apenas
+                    // os metadados conhecidos (firmware/IP), sem mexer em status/last_seen.
+                    if (!retained)
+                    {
+                        await RecordPresenceAsync(deviceId, telemetry);
+                        await TouchDeviceAsync(deviceId);
+                    }
+                    else
+                    {
+                        await RecordMetadataOnlyAsync(deviceId, telemetry);
+                    }
                     break;
 
                 case TurnstileInboundKind.CredentialRead when read is not null:
@@ -141,8 +168,8 @@ public sealed class MqttTurnstileService : BackgroundService
 
                 default:
                     _logger.LogInformation(
-                        "Mensagem não reconhecida de '{Device}' (verbo '{Verb}'): {Payload}",
-                        deviceId, verb, Truncate(payload, 300));
+                        "Mensagem não reconhecida de '{Device}' (verbo '{Verb}', retida={Retained}): {Payload}",
+                        deviceId, verb, retained, Truncate(payload, 300));
                     break;
             }
         }
@@ -203,7 +230,7 @@ public sealed class MqttTurnstileService : BackgroundService
         }
     }
 
-    /// <summary>Registra a presença da catraca no painel de monitoramento (best-effort).</summary>
+    /// <summary>Registra a presença AO VIVO da catraca (renova status + last_seen). Best-effort.</summary>
     private async Task RecordPresenceAsync(string deviceId, TurnstileTelemetry? telemetry)
     {
         try
@@ -222,6 +249,32 @@ public sealed class MqttTurnstileService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Falha ao registrar presença de '{Device}'.", deviceId);
+        }
+    }
+
+    /// <summary>
+    /// Atualiza SOMENTE os metadados (firmware/IP/serial) a partir de uma mensagem
+    /// retida, sem mexer em status/last_seen (retida não é sinal de vida). Best-effort.
+    /// </summary>
+    private async Task RecordMetadataOnlyAsync(string deviceId, TurnstileTelemetry? telemetry)
+    {
+        if (telemetry is null) return;
+        try
+        {
+            using var scope = _services.CreateScope();
+            var monitoring = scope.ServiceProvider.GetRequiredService<ITurnstileMonitoringService>();
+            await monitoring.RecordMetadataAsync(new TurnstilePresenceUpdate(
+                DeviceId: deviceId,
+                Status: null,
+                Firmware: telemetry.Firmware,
+                BoardId: telemetry.BoardId,
+                SerialId: telemetry.SerialId,
+                IpLocal: telemetry.IpLocal,
+                Media: telemetry.Media));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Falha ao registrar metadados de '{Device}'.", deviceId);
         }
     }
 

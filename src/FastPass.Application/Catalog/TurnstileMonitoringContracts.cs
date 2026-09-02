@@ -37,8 +37,17 @@ public sealed record TurnstileMonitorView(
 /// <summary>Registro e leitura da presença/monitoramento das catracas MQTT.</summary>
 public interface ITurnstileMonitoringService
 {
-    /// <summary>Upsert da presença de uma catraca (chamado pelo Worker a cada telemetria).</summary>
+    /// <summary>Upsert da presença AO VIVO de uma catraca (renova status + last_seen).</summary>
     Task RecordPresenceAsync(
+        TurnstilePresenceUpdate update,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atualiza apenas os metadados (firmware/IP/serial) de uma catraca já conhecida,
+    /// sem alterar status nem last_seen. Usado para mensagens retidas (histórico).
+    /// Não cria registro novo.
+    /// </summary>
+    Task RecordMetadataAsync(
         TurnstilePresenceUpdate update,
         CancellationToken cancellationToken = default);
 

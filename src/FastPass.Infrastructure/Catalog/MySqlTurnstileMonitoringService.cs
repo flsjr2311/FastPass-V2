@@ -28,12 +28,18 @@ public sealed class MySqlTurnstileMonitoringService : ITurnstileMonitoringServic
             ? "connected"
             : update.Status!.Trim().ToLowerInvariant();
 
+        // Uma mensagem de "disconnected" é o Last Will do broker: a placa CAIU.
+        // Nesse caso marcamos o status como desconectado, mas NÃO renovamos o
+        // last_seen_at (senão a catraca "morta" apareceria como online).
+        var isDisconnect = status == "disconnected";
+
         await using var connection = _connectionFactory.Create();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
 
         // Upsert: cria na primeira vez, atualiza depois. Campos de metadado só
         // sobrescrevem quando vêm preenchidos (COALESCE mantém o último conhecido).
+        // last_seen_at só avança em mensagens de "vida" (não em disconnect).
         command.CommandText = """
             INSERT INTO fp_turnstile_presence
                 (device_id, status, first_seen_at, last_seen_at, firmware, board_id, serial_id, ip_local, media)
@@ -41,7 +47,7 @@ public sealed class MySqlTurnstileMonitoringService : ITurnstileMonitoringServic
                 (@id, @status, @now, @now, @firmware, @board, @serial, @ip, @media)
             ON DUPLICATE KEY UPDATE
                 status = @status,
-                last_seen_at = @now,
+                last_seen_at = IF(@is_disconnect = 1, last_seen_at, @now),
                 firmware = COALESCE(@firmware, firmware),
                 board_id = COALESCE(@board, board_id),
                 serial_id = COALESCE(@serial, serial_id),
@@ -51,6 +57,35 @@ public sealed class MySqlTurnstileMonitoringService : ITurnstileMonitoringServic
         command.Parameters.AddWithValue("@id", update.DeviceId.Trim());
         command.Parameters.AddWithValue("@status", status);
         command.Parameters.AddWithValue("@now", now);
+        command.Parameters.AddWithValue("@is_disconnect", isDisconnect ? 1 : 0);
+        command.Parameters.AddWithValue("@firmware", (object?)Trim(update.Firmware) ?? DBNull.Value);
+        command.Parameters.AddWithValue("@board", (object?)Trim(update.BoardId) ?? DBNull.Value);
+        command.Parameters.AddWithValue("@serial", (object?)Trim(update.SerialId) ?? DBNull.Value);
+        command.Parameters.AddWithValue("@ip", (object?)Trim(update.IpLocal) ?? DBNull.Value);
+        command.Parameters.AddWithValue("@media", (object?)Trim(update.Media) ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task RecordMetadataAsync(
+        TurnstilePresenceUpdate update,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(update.DeviceId)) return;
+
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // Só atualiza metadados de um registro existente; não cria, não toca status/last_seen.
+        command.CommandText = """
+            UPDATE fp_turnstile_presence
+            SET firmware = COALESCE(@firmware, firmware),
+                board_id = COALESCE(@board, board_id),
+                serial_id = COALESCE(@serial, serial_id),
+                ip_local = COALESCE(@ip, ip_local),
+                media = COALESCE(@media, media)
+            WHERE device_id = @id;
+            """;
+        command.Parameters.AddWithValue("@id", update.DeviceId.Trim());
         command.Parameters.AddWithValue("@firmware", (object?)Trim(update.Firmware) ?? DBNull.Value);
         command.Parameters.AddWithValue("@board", (object?)Trim(update.BoardId) ?? DBNull.Value);
         command.Parameters.AddWithValue("@serial", (object?)Trim(update.SerialId) ?? DBNull.Value);
@@ -74,7 +109,8 @@ public sealed class MySqlTurnstileMonitoringService : ITurnstileMonitoringServic
         // Prioriza o evento em andamento (Running) / mais recente, igual à resolução do Worker.
         command.CommandText = """
             SELECT p.device_id, p.status, p.first_seen_at, p.last_seen_at,
-                   (p.last_seen_at >= (UTC_TIMESTAMP() - INTERVAL @win SECOND)) AS online,
+                   (p.status <> 'disconnected'
+                     AND p.last_seen_at >= (UTC_TIMESTAMP() - INTERVAL @win SECOND)) AS online,
                    p.firmware, p.board_id, p.serial_id, p.ip_local, p.media,
                    d.id, d.name, d.active, d.gate_id,
                    g.name, e.id, e.name
