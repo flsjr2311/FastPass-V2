@@ -141,6 +141,11 @@ public sealed class MqttTurnstileService : BackgroundService
         // e reapareceria a cada reconexão, marcando a catraca como offline indevidamente.
         var retained = e.ApplicationMessage.Retain;
 
+        // Log de diagnóstico: torna visível cada mensagem recebida de uma catraca,
+        // útil para diagnosticar intermitência de conexão da placa.
+        _logger.LogInformation(
+            "MQTT ← '{Device}' /from/{Verb}{Retained}", deviceId, verb, retained ? " (retida)" : "");
+
         try
         {
             var kind = _codec.Decode(verb, payload, out var read, out var telemetry);

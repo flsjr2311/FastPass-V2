@@ -101,6 +101,31 @@ Config para ligar/desligar: `Mqtt:Enabled`. Requer fonte NuGet nuget.org (foi ad
 - Validado com a placa real: apareceu como online, firmware 1.0.35, ip 192.168.15.9, board neon025156;
   ao cadastrar como device Mqtt (identifier=`Catraca 151`) o painel passou a mostrar portaria/evento.
 
-## PENDENTE (quando a doc Neon 1.2 / leitor chegarem)
-1. Confirmar o verbo/payload de LEITURA e o de COMANDO → ajustar `TurnstileMessageCodec`.
-2. Teste fim-a-fim: QR real → catraca gira (relé LOCK) no sentido correto.
+## Descobertas sobre o modelo de operação da placa (IMPORTANTE)
+Investigação em 02/09 revelou que, com o firmware atual (1.0.35), a leitura de QR
+NÃO é encaminhada ao servidor por MQTT:
+- O leitor de QR entra pela **UART** (`uart1desc:"Data <CR>"`); a placa parece validar
+  **localmente** contra a lista de cartões (`capcards:5056`) — por isso só apita e não consulta.
+- **MQTT** observado só com telemetria (status/keepalive/info) e reação a comandos `to`.
+  Nenhuma leitura de credencial chegou em tópico `from/*` mesmo passando vários QRs.
+- **UDP porta 17001** (campo `udp_port` no info) é, segundo o manual, uma **ENTRADA**:
+  "outros equipamentos podem ENVIAR informações PARA o controlador (cartões/tags lidos em
+  outros dispositivos)". Ou seja, a placa RECEBE por UDP; não envia a validação por ele.
+- A placa é **instável no MQTT**: conecta e desconecta sozinha ("connection closed by client").
+
+Conclusão provisória: esta placa/firmware parece desenhada para operação **local/offline**
+(valida contra a própria lista). O modo "consulta o servidor a cada leitura" (online) — se existir —
+depende de configuração/firmware que ainda não temos documentado. **Sem a doc de integração da
+Neon 1.2 não dá para confirmar se há validação online e como ativá-la.**
+
+## Estado do software (nosso lado) — PRONTO e correto
+- MQTT do Worker robusto (re-assina ao reconectar, ignora retidas, trata disconnect).
+- Painel de catracas mostra presença/online corretamente conforme o heartbeat.
+- O pipeline leitura→validação→comando existe e está testado com publish simulado; só falta
+  a placa REALMENTE enviar a leitura (que hoje ela não faz por MQTT).
+
+## PENDENTE (depende da Iongrade)
+1. Obter a doc de integração da **Neon 1.2**: confirmar se há modo de validação ONLINE
+   (consulta ao servidor por leitura) e por qual transporte (MQTT? outro?).
+2. Se for MQTT: descobrir o verbo/payload de leitura e de comando → ajustar `TurnstileMessageCodec`.
+3. Teste fim-a-fim: QR real → catraca gira (relé LOCK) no sentido correto.
