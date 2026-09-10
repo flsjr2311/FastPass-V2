@@ -1,5 +1,168 @@
 # Release Notes — FastPass V2
 
+## v2.2.0 - Phase 2 UX: 3-Mode Turnstile Control (2026-08-27)
+
+**Implementação completa de controle de operação de catracas com 3 modos, mensagens otimizadas para display LCD e pictogramas.**
+
+⚠️ **STATUS**: 95% completo - **Bloqueado aguardando protocolo MQTT da Neon 1.2**
+
+### Novidades
+
+#### TurnstileOperationMode: 3 Modos de Operação
+- **ACTIVE** (`"Active"`): Catraca lê ingresso — comportamento normal de validação
+  - Mensagem: `"PASSE SEU\nINGRESSO"` (2 linhas, sem word breaks)
+  - Pictograma: `None` (display apagado)
+  - Ação no braço: `None` (aguarda validação)
+- **FREE** (`"Free"`): Catraca libera automaticamente ambos os lados
+  - Mensagem: `"LIBERADA\nENTRE"` (verde, ambos os sentidos)
+  - Pictograma: `GreenArrowEntry` (seta verde bidirecional)
+  - Ação no braço: `Unlock` (destranca)
+- **BLOCKED** (`"Blocked"`): Catraca não gira para nenhum lado
+  - Mensagem: `"BLOQUEADA\nCADEADO"` (bloqueada, trancada)
+  - Pictograma: `RedCross` (cruz vermelha)
+  - Ação no braço: `KeepLocked` (permanece travada)
+
+#### Hierarquia de Configuração (Gate → Device → Effective Mode)
+- **Gate-level defaults**: Cada portaria tem um modo padrão (`fp_event_gates.operation_mode`)
+- **Device-level overrides**: Cada catraca pode sobrescrever o modo da portaria (`fp_devices.operation_mode`, NULL = herda)
+- **Resolução**: `effectiveMode = device.operation_mode ?? gate.operation_mode`
+- Permite controle em massa (portaria) + exceções individuais (catraca)
+
+#### Mensagens Otimizadas para Display LCD (2 linhas, 16 caracteres cada)
+- Sem quebras de palavras mid-sentence
+- Textos usam ambas as linhas para melhor leitura
+- Display é monochrome (sem suporte a cores) → pictogramas + texto apenas
+- Todas as mensagens em português (sem apoio a cores ou formatação adicional)
+
+#### API Endpoints Novos/Atualizados
+- `PUT /api/events/{eventId}/gates/{gateId}/turnstile-mode`
+  - Body: `{"turnstileMode": "Active|Free|Blocked"}`
+  - Requer: `portaria.gerenciar`
+  - Retorna: Gate atualizado com `operationMode` e `turnstileMode`
+
+- `PUT /api/events/{eventId}/gates/{gateId}/devices/{deviceId}/operation-mode`
+  - Body: `{"operationMode": "Active|Free|Blocked"}`
+  - Requer: `dispositivo.gerenciar`
+  - Retorna: Device atualizado com `operationMode` e `operationModeOverride`
+
+- `GET /api/events/{eventId}/gates`
+  - Retorna: Incluindo `operationMode` e `turnstileMode` (antes não existiam)
+
+- `GET /api/events/{eventId}/devices`
+  - Retorna: Incluindo `operationMode` (gate mode) e `operationModeOverride` (device override)
+
+#### MQTT Turnstile Service
+- `MqttTurnstileService.HandleReadAsync()`: Verifica o modo efetivo **antes** de validar
+- `SendInitialModeMessageAsync()`: Enviada ao catraca na keepalive, transmite a mensagem initial correta
+- Codificação do resultado (`TurnstileMessageCodec`): Modo → Mensagem LCD + Pictograma
+- Resolução automática: Busca gate+device, resolve modo, envia comando correto
+
+#### Database Migrations
+- **Migration 030** (`030_add_turnstile_operation_mode.sql`)
+  - `ALTER TABLE fp_event_gates ADD COLUMN operation_mode VARCHAR(50) DEFAULT 'Active' NOT NULL;`
+  - `ALTER TABLE fp_devices ADD COLUMN operation_mode VARCHAR(50) NULL;` (NULL = inherit)
+  - Índices para performance
+
+#### Frontend (TBD)
+- Tela "Catracas" já mostra cada device
+- Novo controle tipo select/radio: **Gate Mode** (padrão portaria)
+- Novo controle tipo select/radio por device: **Device Override** (exceção individual)
+- Visualização de "Effective Mode" (gate default ou device override)
+
+### End-to-End Testing (Verificado)
+
+| Teste | Status | Descrição |
+|-------|--------|-----------|
+| Migration 030 | ✅ | Colunas criadas, índices OK |
+| API Restart | ✅ | Código compilado, endpoints novos funcionando |
+| GET gates | ✅ | operationMode retornado (ex.: "Free") |
+| GET devices | ✅ | operationMode + operationModeOverride retornados |
+| PUT gate mode | ✅ | Gate "Camarote" mudada para "Free" (verificado) |
+| PUT device override | ✅ | Device "Catraca 157" mudada para "Blocked" (verificado) |
+| Worker MQTT integration | ✅ | Mode resolution correto, banco carregando modo |
+| MQTT messages generated | ✅ | Mensagens LCD corretas (LIBERADA\nENTRE para FREE, etc.) |
+| MQTT publishing | ✅ | Publicando para `FastPass/{deviceId}/to/access` |
+| Display update on catraca | ❌ | **BLOQUEADO**: Formato MQTT para set_display desconhecido |
+
+### ⚠️ BLOQUEADO - Protocolo MQTT Neon 1.2 Desconhecido
+
+**Problema**: Display da catraca não muda quando modo é alterado via UI.
+
+**Investigação realizada**:
+1. ✅ Mode é carregado corretamente do banco de dados
+2. ✅ Worker recebe telemetria da catraca (keepalive, status, info)
+3. ✅ SendInitialModeMessageAsync é chamada SEMPRE (retained ou live)
+4. ✅ Mensagens corretas são geradas (LIBERADA\nENTRE, BLOQUEADA\nCADEADO, PASSE SEU\nINGRESSO)
+5. ✅ MQTT está publicando no tópico correto
+6. ❌ **Catraca não processa o comando** ou formato do JSON está errado
+
+**Testes com diferentes formatos** (nenhum funcionou):
+- `{"cmd":"access","message":"...","reasonCode":"...","authorized":false}`
+- `{"cmd":"access","line1":"...","line2":"...","time":4}`
+- `{"cmd":"set_display","message":"..."}`
+- `{"cmd":"access","set_display":true,"line1":"...","line2":"...","time":6}`
+- `{"cmd":"access","authorized":true,"message":"...","release":true}`
+
+**Próximos passos para resolver**:
+1. Obter **Neon 1.2 MQTT Protocol Documentation** (fabricante)
+2. Capturar **tráfego MQTT real** de instalação funcionando
+3. Verificar **logs da catraca** (via SSH/serial console)
+4. Validar se tópico deve ser diferente de `/to/access`
+
+**Implementação atual** (pronta para ajuste quando protocolo for confirmado):
+- `TurnstileMessageCodec.EncodeCommand()` gerando JSON com: `cmd`, `authorized`, `release`, `direction`, `pictogram`, `reasonCode`, `message`, `attemptId`
+- Verbo padrão: `"access"` (tópico: `FastPass/{deviceId}/to/access`)
+- Mensagem já formatada para 2 linhas × 16 caracteres
+
+### Roteiro de Testes Prático (Web UI)
+
+**Pré-requisitos:**
+- API rodando: http://localhost:5088
+- Frontend rodando: http://localhost:5173
+- Login: admin / Admin@1234
+- Evento: "Evento teste alpha"
+- Gate: "Camarote" (com devices "Catraca 151 - Neon", "Catraca157", etc.)
+
+**Teste 1: Alterar Modo da Portaria (Gate)**
+1. Login com admin
+2. Navegar para Eventos → "Evento teste alpha" → Portarias
+3. Selecionar "Camarote"
+4. Em "Modo da Catraca" (ou "Turnstile Mode"), mudar para **FREE**
+5. Salvar
+6. Verificar: Portaria atualizada com modo "LIBERADA\nENTRE"
+7. Confirmar MQTT: Catraca recebe mensagem e exibe pictograma verde
+
+**Teste 2: Override de Device (Exceção)**
+1. Na mesma tela, expandir "Dispositivos" ou ir para "Dispositivos"
+2. Selecionar device "Catraca 151 - Neon"
+3. Em "Override de Modo", selecionar **BLOCKED**
+4. Salvar
+5. Verificar: Device mostra override "BLOQUEADA\nCADEADO"
+6. Confirmar: Portaria = FREE, Device = BLOCKED → Device usa BLOCKED
+
+**Teste 3: Voltar para ACTIVE (Padrão)**
+1. Na tela de Portaria, resetar modo para **ACTIVE**
+2. Na tela de Device, limpar override (voltar a NULL ou ACTIVE)
+3. Confirmar MQTT: Catracas recebem "PASSE SEU\nINGRESSO"
+
+**Teste 4: Simulação de Keepalive Real**
+1. Conectar catraca física USB/Ethernet ou simular via MQTT
+2. Catraca envia keepalive periodicamente
+3. Worker recebe, resolve gate+device, envia mensagem inicial
+4. Display exibe mensagem correta (ACTIVE/FREE/BLOCKED) com pictograma
+
+### Removido
+
+- Nenhum código removido nesta release; apenas adição de campos + lógica
+
+### Migrações de Banco (Migration 030)
+
+| # | Arquivo | Conteúdo |
+|----|---------|----------|
+| 030 | `030_add_turnstile_operation_mode.sql` | Adiciona `operation_mode` em gates (default 'Active') e devices (nullable) |
+
+---
+
 ## v2.1.0 - Evolução do núcleo (2026)
 
 Rodada de correções, refinamentos operacionais e limpeza estrutural preparando o terreno para a integração com dispositivos (catracas).
