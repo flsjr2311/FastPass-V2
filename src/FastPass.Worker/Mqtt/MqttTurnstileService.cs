@@ -158,13 +158,14 @@ public sealed class MqttTurnstileService : BackgroundService
                     {
                         await RecordPresenceAsync(deviceId, telemetry);
                         await TouchDeviceAsync(deviceId);
-                        // Envia mensagem inicial do modo operacional (PASSE SEU INGRESSO, CATRACA LIBERADA, etc)
-                        await SendInitialModeMessageAsync(deviceId);
                     }
                     else
                     {
                         await RecordMetadataOnlyAsync(deviceId, telemetry);
                     }
+                    // Envia mensagem inicial do modo operacional (PASSE SEU INGRESSO, CATRACA LIBERADA, etc)
+                    // SEMPRE enviar, mesmo se retida, para garantir que o display mostra o modo correto
+                    await SendInitialModeMessageAsync(deviceId);
                     break;
 
                 case TurnstileInboundKind.CredentialRead when read is not null:
@@ -352,6 +353,9 @@ public sealed class MqttTurnstileService : BackgroundService
             if (device is null) return;
 
             var effectiveMode = device.OperationModeOverride ?? device.OperationMode;
+            
+            _logger.LogInformation("📌 SendInitialMode para '{Device}': operationMode={OperationMode}, override={Override}, effective={Effective}", 
+                deviceId, device.OperationMode, device.OperationModeOverride, effectiveMode);
 
             AccessValidationResult modeMessage;
 
@@ -474,7 +478,7 @@ public sealed class MqttTurnstileService : BackgroundService
             .WithPayload(payload)
             .Build();
         await _client.PublishAsync(msg);
-        _logger.LogDebug("Publicado em {Topic}: {Payload}", topic, payload);
+        _logger.LogInformation("MQTT → {Topic}: {Payload}", topic, payload);
     }
 
     private static string Truncate(string s, int max) => s.Length > max ? s[..max] : s;

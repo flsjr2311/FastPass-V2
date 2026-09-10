@@ -1329,6 +1329,8 @@ public sealed class MySqlCatalogService : ICatalogService
         var deviceModeOverride = reader.IsDBNull(5) ? null : reader.GetString(5);
         var effectiveMode = deviceModeOverride ?? gateMode;  // Se tem override, usa; senão herda da portaria
 
+        System.Diagnostics.Debug.WriteLine($"🔍 ResolveTurnstile({identifier}): gateMode={gateMode}, deviceOverride={deviceModeOverride}, effective={effectiveMode}");
+
         return new TurnstileDeviceResolution(
             ReadGuid(reader, 0),
             reader.GetString(1),
