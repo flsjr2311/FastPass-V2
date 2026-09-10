@@ -213,7 +213,7 @@ public sealed class MqttTurnstileService : BackgroundService
                 "Catraca '{Device}' está BLOQUEADA (modo: {Mode}, override: {Override}). Leitura rejeitada (código: {Code})",
                 deviceId, device.OperationMode, device.OperationModeOverride, read.CredentialCode);
             
-            // Envia comando com mensagem CATRACA BLOQUEADA
+            // Envia comando: CATRACA BLOQUEADA (usa 2 linhas completas)
             var blockedResult = new AccessValidationResult(
                 AttemptId: Guid.NewGuid(),
                 Approved: false,
@@ -233,7 +233,7 @@ public sealed class MqttTurnstileService : BackgroundService
                 ArmAction: "KeepLocked",
                 Pictogram: "RedCross",
                 ReasonCode: "CATRACA_BLOQUEADA",
-                Message: "CATRACA\nBLOQUEADA");
+                Message: "BLOQUEADA\nCADEADO");
             
             var (verb, payload) = _codec.EncodeCommand(blockedResult);
             await PublishAsync(_topics.To(deviceId, verb), payload);
@@ -246,7 +246,7 @@ public sealed class MqttTurnstileService : BackgroundService
                 "Catraca '{Device}' em modo LIVRE (modo: {Mode}, override: {Override}). Liberando entrada e saída.",
                 deviceId, device.OperationMode, device.OperationModeOverride);
             
-            // Envia comando com mensagem CATRACA LIBERADA
+            // Envia comando: CATRACA LIBERADA (usa 2 linhas completas)
             var freeResult = new AccessValidationResult(
                 AttemptId: Guid.NewGuid(),
                 Approved: true,
@@ -264,9 +264,9 @@ public sealed class MqttTurnstileService : BackgroundService
                 EntriesUsed: null,
                 PeopleInside: null,
                 ArmAction: "Unlock",
-                Pictogram: "GreenArrowEntry",  // Seta verde
+                Pictogram: "GreenArrowEntry",
                 ReasonCode: "CATRACA_LIVRE",
-                Message: "CATRACA\nLIBERADA");
+                Message: "LIBERADA\nENTRE");
             
             var (verb, payload) = _codec.EncodeCommand(freeResult);
             await PublishAsync(_topics.To(deviceId, verb), payload);
@@ -337,7 +337,8 @@ public sealed class MqttTurnstileService : BackgroundService
 
     /// <summary>
     /// Envia a mensagem inicial do modo operacional da catraca.
-    /// Chamado no keepalive para mostrar: PASSE SEU INGRESSO, CATRACA LIBERADA, etc.
+    /// Otimizado para usar 2 linhas completas sem quebrar palavras.
+    /// Display sem mudança de cor - apenas pictogramas.
     /// Best-effort.
     /// </summary>
     private async Task SendInitialModeMessageAsync(string deviceId)
@@ -375,7 +376,7 @@ public sealed class MqttTurnstileService : BackgroundService
                     ArmAction: "KeepLocked",
                     Pictogram: "RedCross",
                     ReasonCode: "CATRACA_BLOQUEADA",
-                    Message: "CATRACA\nBLOQUEADA");
+                    Message: "BLOQUEADA\nCADEADO");
             }
             else if (effectiveMode == "Free")
             {
@@ -398,7 +399,7 @@ public sealed class MqttTurnstileService : BackgroundService
                     ArmAction: "Unlock",
                     Pictogram: "GreenArrowEntry",
                     ReasonCode: "CATRACA_LIVRE",
-                    Message: "CATRACA\nLIBERADA");
+                    Message: "LIBERADA\nENTRE");
             }
             else  // Active
             {
@@ -419,7 +420,7 @@ public sealed class MqttTurnstileService : BackgroundService
                     EntriesUsed: null,
                     PeopleInside: null,
                     ArmAction: "None",
-                    Pictogram: "None",  // Sem pictograma
+                    Pictogram: "None",
                     ReasonCode: "CATRACA_ATIVA",
                     Message: "PASSE SEU\nINGRESSO");
             }
