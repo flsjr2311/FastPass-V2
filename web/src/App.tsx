@@ -1393,7 +1393,10 @@ function TurnstileCard({ t, onAssignClick }: { t: TurnstileMonitorView; onAssign
     </div>
     <div className="turnstile-assign">
       {assigned
-        ? <span className="assigned">✅ Atribuída a <strong>{t.gateName}</strong>{t.eventName ? <> · evento <strong>{t.eventName}</strong></> : ''}{t.deviceActive === false ? ' · (inativa)' : ''}</span>
+        ? <div className="assigned">
+            <div>✅ Atribuída a <strong>{t.gateName}</strong>{t.deviceActive === false ? ' (inativa)' : ''}</div>
+            {t.eventName && <div className="assigned-event">evento <strong>{t.eventName}</strong></div>}
+          </div>
         : <span className="unassigned">⚠️ Sem atribuição</span>}
     </div>
     {!assigned && t.online && (

@@ -587,13 +587,30 @@ td[colspan] { white-space: normal; }
 
 .turnstile-assign .assigned {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   color: #1aab76;
+}
+
+.turnstile-assign .assigned > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .turnstile-assign .assigned strong {
   color: #0d7c5e;
+  font-weight: 700;
+}
+
+.turnstile-assign .assigned-event {
+  font-size: 10px;
+  color: #7a8699;
+  margin-left: 2px;
+}
+
+.turnstile-assign .assigned-event strong {
+  color: #5a6b7a;
 }
 
 .turnstile-assign .unassigned {
