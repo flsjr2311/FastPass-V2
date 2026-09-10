@@ -799,3 +799,44 @@ td[colspan] { white-space: normal; }
   font-size: 11px;
   line-height: 1.4;
 }
+
+
+/* Tabs para Configuração */
+.config-tabs-container {
+  display: flex;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 0 24px;
+  border-bottom: 1px solid #e7ebf2;
+}
+
+.config-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-button {
+  padding: 14px 18px;
+  color: #8793a5;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font: 600 12px 'DM Sans';
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.tab-button:hover {
+  color: #5b72c9;
+}
+
+.tab-button.active {
+  color: #5875db;
+  border-bottom-color: #5875db;
+}
+
+.config-content-panel {
+  margin-bottom: 18px;
+}

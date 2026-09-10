@@ -1,4 +1,4 @@
-﻿import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, API_BASE_URL } from './api';
 import type {
   AttemptPage,
@@ -1083,7 +1083,6 @@ function SectorCatalogCard({ sector, gatesCount, onRemove, removing }: { sector:
 
 function ConfigurationView({ eventId }: { eventId: string }) {
   const [gates, setGates] = useState<GateView[]>([]);
-  const [devices, setDevices] = useState<DeviceView[]>([]);
   const [selectedGateId, setSelectedGateId] = useState('');
   const [sectors, setSectors] = useState<SectorView[]>([]);
   const [rules, setRules] = useState<GateSectorView[]>([]);
@@ -1098,16 +1097,11 @@ function ConfigurationView({ eventId }: { eventId: string }) {
   const [sectorName, setSectorName] = useState('');
   const [sectorCapacity, setSectorCapacity] = useState('');
   const [catalogSaving, setCatalogSaving] = useState(false);
-  const [deviceSavingKey, setDeviceSavingKey] = useState<string | null>(null);
-  const [deviceName, setDeviceName] = useState('');
-  const [deviceIdentifier, setDeviceIdentifier] = useState('');
-  const [deviceType, setDeviceType] = useState<DeviceType>('Simulator');
-  const [deviceConfiguration, setDeviceConfiguration] = useState('');
+  const [activeTab, setActiveTab] = useState<'gates' | 'sectors' | 'matrix'>('gates');
 
   useEffect(() => {
     if (!eventId) {
       setGates([]);
-      setDevices([]);
       setSelectedGateId('');
       setSectors([]);
       setRules([]);
@@ -1120,16 +1114,14 @@ function ConfigurationView({ eventId }: { eventId: string }) {
     setError(null);
     setMessage(null);
     setGates([]);
-    setDevices([]);
     setSelectedGateId('');
     setSectors([]);
     setRules([]);
-    Promise.all([api.listGates(eventId), api.listSectors(eventId), api.listGateSectors(eventId), api.listDevices(eventId)])
-      .then(([gateResult, sectorResult, ruleResult, deviceResult]) => {
+    Promise.all([api.listGates(eventId), api.listSectors(eventId), api.listGateSectors(eventId)])
+      .then(([gateResult, sectorResult, ruleResult]) => {
         if (cancelled) return;
         setGates(gateResult);
         setSelectedGateId((current) => current && gateResult.some((gate) => gate.id === current) ? current : gateResult[0]?.id ?? '');
-        setDevices(deviceResult);
         setSectors(sectorResult);
         setRules(ruleResult);
       })
@@ -1190,54 +1182,6 @@ function ConfigurationView({ eventId }: { eventId: string }) {
     }
   }
 
-  async function handleCreateDevice(formEvent: FormEvent<HTMLFormElement>) {
-    formEvent.preventDefault();
-    if (!selectedGateId) {
-      setError('Crie ou selecione uma portaria para cadastrar o dispositivo.');
-      return;
-    }
-    if (!deviceName.trim()) {
-      setError('Informe o nome do dispositivo.');
-      return;
-    }
-    setDeviceSavingKey('new');
-    setError(null);
-    setMessage(null);
-    try {
-      const created = await api.createDevice(eventId, selectedGateId, {
-        name: deviceName.trim(),
-        identifier: deviceIdentifier.trim() || undefined,
-        deviceType,
-        configurationJson: deviceConfiguration.trim() || undefined,
-      });
-      setDevices((current) => [...current, created]);
-      setDeviceName('');
-      setDeviceIdentifier('');
-      setDeviceType('Simulator');
-      setDeviceConfiguration('');
-      setMessage(`Dispositivo “${created.name}” cadastrado na portaria.`);
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível cadastrar o dispositivo.');
-    } finally {
-      setDeviceSavingKey(null);
-    }
-  }
-
-  async function handleUpdateDevice(device: DeviceView, payload: { name: string; identifier?: string; deviceType: DeviceType; configurationJson?: string; active: boolean }) {
-    setDeviceSavingKey(device.id);
-    setError(null);
-    setMessage(null);
-    try {
-      const updated = await api.updateDevice(eventId, device.gateId, device.id, payload);
-      setDevices((current) => current.map((item) => item.id === updated.id ? updated : item));
-      setMessage(`Dispositivo “${updated.name}” atualizado.`);
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o dispositivo.');
-    } finally {
-      setDeviceSavingKey(null);
-    }
-  }
-
   async function handleRemoveGate(gate: GateView) {
     if (!window.confirm(`Remover a portaria “${gate.name}” deste evento? Ela só poderá ser removida se não tiver associações ativas na matriz.`)) return;
     const key = `gate:${gate.id}`;
@@ -1248,7 +1192,6 @@ function ConfigurationView({ eventId }: { eventId: string }) {
       await api.removeGate(eventId, gate.id);
       const remainingGates = gates.filter((item) => item.id !== gate.id);
       setGates(remainingGates);
-      setDevices((current) => current.filter((item) => item.gateId !== gate.id));
       if (selectedGateId === gate.id) setSelectedGateId(remainingGates[0]?.id ?? '');
       setRules((current) => current.filter((rule) => rule.gateId !== gate.id));
       setMessage(`Portaria “${gate.name}” removida do evento.`);
@@ -1352,29 +1295,23 @@ function ConfigurationView({ eventId }: { eventId: string }) {
         )}
       </section> : null;
     })()}
-    <section className="config-catalog-grid">
-      <article className="panel config-mini-panel">
-        <div className="panel-heading"><div><p className="panel-kicker">CATÁLOGO DE PORTARIAS</p><h2>Cadastrar portaria</h2><p className="panel-subtitle">As portarias já cadastradas aparecem abaixo.</p></div><span className="catalog-count">{gates.length}</span></div>
-        <form className="config-form config-mini-form" onSubmit={handleCreateGate}><label>Nome<input value={gateName} onChange={(event) => setGateName(event.target.value)} placeholder="Ex.: Portaria Norte" disabled={catalogSaving} /></label><label>Código opcional<input value={gateCode} onChange={(event) => setGateCode(event.target.value)} placeholder="Ex.: PN-01" disabled={catalogSaving} /></label><button className="secondary-button form-submit" type="submit" disabled={catalogSaving}>{catalogSaving ? 'Salvando...' : 'Cadastrar portaria'}</button></form>
-        <div className="catalog-items gates-grid" aria-label="Portarias cadastradas">{gates.length === 0 ? <p className="catalog-empty">Nenhuma portaria cadastrada.</p> : gates.map((gate) => {
-          const gateDevices = devices.filter(d => d.gateId === gate.id);
-          const gateSectors = rules.filter(r => r.gateId === gate.id && r.direction === 'Entry').map(r => r.sectorId);
-          const uniqueSectors = [...new Set(gateSectors)].length;
-          return <GateCatalogCard key={gate.id} gate={gate} devices={gateDevices} sectorsCount={uniqueSectors} selected={selectedGateId === gate.id} onSelect={() => setSelectedGateId(gate.id)} onRemove={() => handleRemoveGate(gate)} removing={removingKey === `gate:${gate.id}`} />;
-        })}</div>
-      </article>
-      <article className="panel config-mini-panel">
-        <div className="panel-heading"><div><p className="panel-kicker">CATÁLOGO DE SETORES</p><h2>Cadastrar setor</h2><p className="panel-subtitle">Os setores já cadastrados aparecem abaixo.</p></div><span className="catalog-count">{sectors.length}</span></div>
-        <form className="config-form config-mini-form" onSubmit={handleCreateSector}><label>Nome<input value={sectorName} onChange={(event) => setSectorName(event.target.value)} placeholder="Ex.: Pista premium" disabled={catalogSaving} /></label><label>Capacidade opcional<input type="number" min="1" value={sectorCapacity} onChange={(event) => setSectorCapacity(event.target.value)} placeholder="Ex.: 500" disabled={catalogSaving} /></label><button className="secondary-button form-submit" type="submit" disabled={catalogSaving}>{catalogSaving ? 'Salvando...' : 'Cadastrar setor'}</button></form>
-        <div className="catalog-items sectors-grid" aria-label="Setores cadastrados">{sectors.length === 0 ? <p className="catalog-empty">Nenhum setor cadastrado.</p> : sectors.map((sector) => {
-          const sectorGates = rules.filter(r => r.sectorId === sector.id && r.direction === 'Entry').map(r => r.gateId);
-          const uniqueGates = [...new Set(sectorGates)].length;
-          return <SectorCatalogCard key={sector.id} sector={sector} gatesCount={uniqueGates} onRemove={() => handleRemoveSector(sector)} removing={removingKey === `sector:${sector.id}`} />;
-        })}</div>
-      </article>
+    {/* Tabs Navigation */}
+    <section className="config-tabs-container">
+      <div className="config-tabs">
+        <button className={`tab-button ${activeTab === 'gates' ? 'active' : ''}`} onClick={() => setActiveTab('gates')}>🚪 Portarias</button>
+        <button className={`tab-button ${activeTab === 'sectors' ? 'active' : ''}`} onClick={() => setActiveTab('sectors')}>🎪 Setores</button>
+        <button className={`tab-button ${activeTab === 'matrix' ? 'active' : ''}`} onClick={() => setActiveTab('matrix')}>🔗 Matriz</button>
+      </div>
     </section>
-    <section className="panel config-devices-panel"><div className="panel-heading"><div><p className="panel-kicker">DISPOSITIVOS</p><h2>Dispositivos das portarias</h2><p className="panel-subtitle">Cadastre simuladores agora e configure os dispositivos físicos quando estiverem disponíveis. Nenhuma conexão de hardware é iniciada por esta tela.</p></div><div className="config-counts"><strong>{devices.length}</strong><span>dispositivos</span></div></div><form className="config-form" onSubmit={handleCreateDevice}><label>Portaria<select value={selectedGateId} onChange={(event) => setSelectedGateId(event.target.value)} disabled={deviceSavingKey === 'new' || gates.length === 0}><option value="">Selecione</option>{gates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}{gate.code ? ` · ${gate.code}` : ''}</option>)}</select></label><label>Nome<input value={deviceName} onChange={(event) => setDeviceName(event.target.value)} placeholder="Ex.: Catraca Norte 01" disabled={deviceSavingKey === 'new'} /></label><label>Identifier opcional<input value={deviceIdentifier} onChange={(event) => setDeviceIdentifier(event.target.value)} placeholder="Ex.: catraca-norte-01" disabled={deviceSavingKey === 'new'} /></label><label>Tipo<select value={deviceType} onChange={(event) => setDeviceType(event.target.value as DeviceType)} disabled={deviceSavingKey === 'new'}><option value="Simulator">Simulator</option><option value="Serial">Serial</option><option value="Vcom">Vcom</option><option value="Mqtt">Mqtt</option><option value="Legacy">Legacy</option></select></label><label>Configuration JSON opcional<textarea rows={2} value={deviceConfiguration} onChange={(event) => setDeviceConfiguration(event.target.value)} placeholder='{"port":"COM3"}' disabled={deviceSavingKey === 'new'} /></label><button className="secondary-button form-submit" type="submit" disabled={deviceSavingKey === 'new' || !selectedGateId}>{deviceSavingKey === 'new' ? 'Cadastrando...' : 'Cadastrar dispositivo'}</button></form>{gates.length === 0 ? <EmptyState message="Crie uma portaria antes de cadastrar dispositivos." /> : devices.length === 0 ? <EmptyState message="Nenhum dispositivo cadastrado neste evento." /> : <div className="table-scroll"><table><thead><tr><th>Dispositivo</th><th>Identifier</th><th>Tipo</th><th>Configuration JSON</th><th>Último contato</th><th>Estado</th><th /></tr></thead><tbody>{devices.filter((device) => device.gateId === selectedGateId).map((device) => <DeviceRow key={device.id} device={device} saving={deviceSavingKey === device.id} onSave={handleUpdateDevice} />)}</tbody></table></div>}</section>
-    <section className="panel config-rules-panel matrix-only-panel"><div className="panel-heading"><div><p className="panel-kicker">MATRIZ DE ACESSO</p><h2>Portarias × setores</h2><p className="panel-subtitle">Marque Entrada e/ou Saída diretamente em cada célula. Use “Remover” no cabeçalho para excluir uma portaria ou setor sem associações ativas.</p></div><div className="matrix-legend"><span><i className="entry-mark">↓</i>Entrada</span><span><i className="exit-mark">↑</i>Saída</span></div></div>{loading ? <div className="table-loading"><span className="spinner" />Carregando configuração...</div> : gates.length === 0 || sectors.length === 0 ? <EmptyState message="Crie ao menos uma portaria e um setor para visualizar a matriz." /> : <GateSectorMatrix gates={gates} sectors={sectors} rules={rules} savingKey={cellSavingKey} removingKey={removingKey} modeSavingKey={modeSavingKey} onToggle={handleToggleMatrix} onRemoveGate={handleRemoveGate} onRemoveSector={handleRemoveSector} onSetMode={handleSetMode} />}</section>
+
+    {/* Tab Content: Portarias */}
+    {activeTab === 'gates' && <section className="panel config-content-panel"><div className="panel-heading"><div><p className="panel-kicker">PORTARIAS</p><h2>Cadastrar portaria</h2></div><span className="catalog-count">{gates.length}</span></div><form className="config-form config-mini-form" onSubmit={handleCreateGate}><label>Nome<input value={gateName} onChange={(e) => setGateName(e.target.value)} placeholder="Ex.: Portaria Norte" disabled={catalogSaving} /></label><label>Código<input value={gateCode} onChange={(e) => setGateCode(e.target.value)} placeholder="Ex.: PN-01" disabled={catalogSaving} /></label><button className="secondary-button" type="submit" disabled={catalogSaving}>{catalogSaving ? 'Salvando...' : 'Cadastrar'}</button></form><div className="catalog-items gates-grid">{gates.length === 0 ? <p className="catalog-empty">Nenhuma portaria cadastrada.</p> : gates.map((gate) => {const gateSectors = rules.filter(r => r.gateId === gate.id && r.direction === 'Entry').map(r => r.sectorId); const uniqueSectors = [...new Set(gateSectors)].length; return <GateCatalogCard key={gate.id} gate={gate} devices={[]} sectorsCount={uniqueSectors} selected={selectedGateId === gate.id} onSelect={() => setSelectedGateId(gate.id)} onRemove={() => handleRemoveGate(gate)} removing={removingKey === `gate:${gate.id}`} />; })}</div></section>}
+
+    {/* Tab Content: Setores */}
+    {activeTab === 'sectors' && <section className="panel config-content-panel"><div className="panel-heading"><div><p className="panel-kicker">SETORES</p><h2>Cadastrar setor</h2></div><span className="catalog-count">{sectors.length}</span></div><form className="config-form config-mini-form" onSubmit={handleCreateSector}><label>Nome<input value={sectorName} onChange={(e) => setSectorName(e.target.value)} placeholder="Ex.: Pista premium" disabled={catalogSaving} /></label><label>Capacidade<input type="number" min="1" value={sectorCapacity} onChange={(e) => setSectorCapacity(e.target.value)} placeholder="Ex.: 500" disabled={catalogSaving} /></label><button className="secondary-button" type="submit" disabled={catalogSaving}>{catalogSaving ? 'Salvando...' : 'Cadastrar'}</button></form><div className="catalog-items sectors-grid">{sectors.length === 0 ? <p className="catalog-empty">Nenhum setor cadastrado.</p> : sectors.map((sector) => {const sectorGates = rules.filter(r => r.sectorId === sector.id && r.direction === 'Entry').map(r => r.gateId); const uniqueGates = [...new Set(sectorGates)].length; return <SectorCatalogCard key={sector.id} sector={sector} gatesCount={uniqueGates} onRemove={() => handleRemoveSector(sector)} removing={removingKey === `sector:${sector.id}`} />; })}</div></section>}
+
+    {/* Tab Content: Matriz */}
+    {activeTab === 'matrix' && <section className="panel config-rules-panel"><div className="panel-heading"><div><p className="panel-kicker">MATRIZ DE ACESSO</p><h2>Portarias × setores</h2></div><div className="matrix-legend"><span><i className="entry-mark">↓</i>Entrada</span><span><i className="exit-mark">↑</i>Saída</span></div></div>{loading ? <div className="table-loading"><span className="spinner" />Carregando...</div> : gates.length === 0 || sectors.length === 0 ? <EmptyState message="Crie portarias e setores." /> : <GateSectorMatrix gates={gates} sectors={sectors} rules={rules} savingKey={cellSavingKey} removingKey={removingKey} modeSavingKey={modeSavingKey} onToggle={handleToggleMatrix} onRemoveGate={handleRemoveGate} onRemoveSector={handleRemoveSector} onSetMode={handleSetMode} />}</section>}
   </>;
 }
 
