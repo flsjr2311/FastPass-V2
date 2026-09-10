@@ -143,6 +143,11 @@ public sealed class TurnstileMessageCodec
     public (string Verb, string Payload) EncodeCommand(AccessValidationResult result)
     {
         var release = string.Equals(result.ArmAction, "Unlock", StringComparison.OrdinalIgnoreCase);
+        
+        // Formata a mensagem para o display LCD: máximo 32 caracteres (2 linhas × 16 chars).
+        // Se a mensagem tiver quebra de linha (\n), respeita. Caso contrário, quebra no meio.
+        var displayMessage = FormatDisplayMessage(result.Message);
+        
         var command = new
         {
             cmd = "access",
@@ -151,10 +156,46 @@ public sealed class TurnstileMessageCodec
             direction = result.Direction,          // Entry | Exit — sentido a liberar
             pictogram = result.Pictogram,          // GreenArrowEntry | GreenArrowExit | RedCross
             reasonCode = result.ReasonCode,
-            message = result.Message,              // texto para o display
+            message = displayMessage,              // texto formatado para o display (até 32 chars)
             attemptId = result.AttemptId,
         };
         return ("access", JsonSerializer.Serialize(command, JsonOpts));
+    }
+
+    /// <summary>
+    /// Formata a mensagem para o display LCD da catraca (2 linhas × 16 caracteres).
+    /// Se houver quebra de linha (\n), usa como está. Caso contrário, quebra no máximo 32 chars.
+    /// </summary>
+    private static string FormatDisplayMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return string.Empty;
+
+        var msg = message.Trim();
+        
+        // Trunca no máximo 32 caracteres (2 linhas × 16)
+        if (msg.Length > 32)
+            msg = msg[..32];
+
+        // Se tiver quebra de linha, usa como está
+        if (msg.Contains('\n'))
+            return msg;
+
+        // Se não tiver quebra de linha e couber em uma linha, deixa em uma
+        if (msg.Length <= 16)
+            return msg;
+
+        // Quebra no meio para 2 linhas de 16 caracteres
+        // Tenta quebrar em um espaço para não cortar palavra
+        var midpoint = 16;
+        var lastSpace = msg[..16].LastIndexOf(' ');
+        if (lastSpace > 0)
+            midpoint = lastSpace;
+
+        var line1 = msg[..midpoint].Trim();
+        var line2 = msg[midpoint..].Trim();
+
+        return $"{line1}\n{line2}";
     }
 
     private static string? FirstString(JsonElement obj, params string[] names)
