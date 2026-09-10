@@ -77,10 +77,14 @@ public sealed record GateView(
     string Name,
     string? Code,
     bool Active,
-    string OperationMode = "EntryAndExitValidated");
+    string OperationMode = "EntryAndExitValidated",
+    string TurnstileMode = "Active");
 
 public sealed record SetGateOperationModeCommand(
     string OperationMode);
+
+public sealed record SetGateTurnstileModeCommand(
+    string TurnstileMode);
 
 public sealed record CreateDeviceCommand(
     string Name,
@@ -110,7 +114,8 @@ public sealed record DeviceView(
     bool Active,
     DateTimeOffset? LastSeenAt,
     string? ConfigurationJson,
-    string OperationMode = "Active");
+    string OperationMode = "Active",
+    string? OperationModeOverride = null);
 
 /// <summary>
 /// Resolução de um dispositivo (catraca) a partir do seu identifier — o "nome"
@@ -123,6 +128,7 @@ public sealed record TurnstileDeviceResolution(
     string Identifier,
     string DeviceType,
     string OperationMode,
+    string? OperationModeOverride,
     Guid GateId,
     string GateName,
     Guid EventId,
@@ -296,6 +302,12 @@ public interface ICatalogService
         Guid eventId,
         Guid gateId,
         SetGateOperationModeCommand command,
+        CancellationToken cancellationToken = default);
+
+    Task<GateView> SetGateTurnstileModeAsync(
+        Guid eventId,
+        Guid gateId,
+        SetGateTurnstileModeCommand command,
         CancellationToken cancellationToken = default);
 
     Task<DeviceView> CreateDeviceAsync(

@@ -379,6 +379,13 @@ app.MapPut("/api/events/{eventId:guid}/gates/{gateId:guid}/operation-mode", asyn
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
+app.MapPut("/api/events/{eventId:guid}/gates/{gateId:guid}/turnstile-mode", async (Guid eventId, Guid gateId, SetGateTurnstileModeCommand command, ICatalogService svc, HttpContext ctx, CancellationToken ct) =>
+{
+    if (ctx.RequirePermission("portaria.gerenciar") is { } e) return e;
+    try { return Results.Ok(await svc.SetGateTurnstileModeAsync(eventId, gateId, command, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Dispositivos  (requer devices.manage)
 // ══════════════════════════════════════════════════════════════════════════════

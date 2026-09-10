@@ -899,7 +899,8 @@ public sealed class MySqlCatalogService : ICatalogService
         command.CommandText = """
             SELECT g.id, g.venue_id, g.name, g.code,
                    (g.active = 1 AND eg.active = 1) AS active,
-                   eg.operation_mode
+                   eg.operation_mode,
+                   eg.operation_mode AS turnstile_mode
             FROM fp_event_gates eg
             INNER JOIN fp_gates g ON g.id = eg.gate_id
             WHERE eg.event_id = @event_id
@@ -919,7 +920,8 @@ public sealed class MySqlCatalogService : ICatalogService
                 reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 Convert.ToBoolean(reader.GetValue(4)),
-                reader.IsDBNull(5) ? GateOperationMode.EntryAndExitValidated.ToString() : reader.GetString(5)));
+                reader.IsDBNull(5) ? GateOperationMode.EntryAndExitValidated.ToString() : reader.GetString(5),
+                reader.IsDBNull(6) ? "Active" : reader.GetString(6)));
         }
 
         return result;
@@ -952,6 +954,52 @@ public sealed class MySqlCatalogService : ICatalogService
               AND active = 1;
             """;
         update.Parameters.AddWithValue("@operation_mode", operationMode.ToString());
+        update.Parameters.AddWithValue("@event_id", eventId.ToString());
+        update.Parameters.AddWithValue("@gate_id", gateId.ToString());
+
+        if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new ArgumentException("Portaria não encontrada, inativa ou não associada ao evento.");
+        }
+
+        var gates = await ListGatesAsync(eventId, false, cancellationToken);
+        return gates.Single(item => item.Id == gateId);
+    }
+
+    public async Task<GateView> SetGateTurnstileModeAsync(
+        Guid eventId,
+        Guid gateId,
+        SetGateTurnstileModeCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventId == Guid.Empty || gateId == Guid.Empty)
+        {
+            throw new ArgumentException("EventId e GateId são obrigatórios.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.TurnstileMode))
+        {
+            throw new ArgumentException("TurnstileMode é obrigatório.");
+        }
+
+        // Valida o modo (Active, Free, Blocked)
+        if (!Enum.TryParse<TurnstileOperationMode>(command.TurnstileMode, true, out var turnstileMode))
+        {
+            throw new ArgumentException("TurnstileMode deve ser Active, Free ou Blocked.");
+        }
+
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var update = connection.CreateCommand();
+        // Atualiza operation_mode na portaria (eg) - afeta todas as catracas que herdam
+        update.CommandText = """
+            UPDATE fp_event_gates
+            SET operation_mode = @turnstile_mode
+            WHERE event_id = @event_id
+              AND gate_id = @gate_id
+              AND active = 1;
+            """;
+        update.Parameters.AddWithValue("@turnstile_mode", turnstileMode.ToString());
         update.Parameters.AddWithValue("@event_id", eventId.ToString());
         update.Parameters.AddWithValue("@gate_id", gateId.ToString());
 
@@ -1050,7 +1098,8 @@ public sealed class MySqlCatalogService : ICatalogService
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT d.id, d.gate_id, g.name, g.code, d.name, d.identifier,
-                   d.device_type, d.active, d.last_seen_at, d.configuration_json, d.operation_mode
+                   d.device_type, d.active, d.last_seen_at, d.configuration_json, 
+                   eg.operation_mode as gate_mode, d.operation_mode as device_mode_override
             FROM fp_devices d
             INNER JOIN fp_gates g ON g.id = d.gate_id
             INNER JOIN fp_event_gates eg ON eg.gate_id = d.gate_id
@@ -1069,6 +1118,10 @@ public sealed class MySqlCatalogService : ICatalogService
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
+            var gateMode = reader.IsDBNull(10) ? "Active" : reader.GetString(10);
+            var deviceModeOverride = reader.IsDBNull(11) ? null : reader.GetString(11);
+            var effectiveMode = deviceModeOverride ?? gateMode;  // Se tem override, usa; senão herda da portaria
+
             result.Add(new DeviceView(
                 ReadGuid(reader, 0),
                 eventId,
@@ -1081,7 +1134,8 @@ public sealed class MySqlCatalogService : ICatalogService
                 Convert.ToBoolean(reader.GetValue(7)),
                 reader.IsDBNull(8) ? null : ReadDateTimeOffset(reader, 8),
                 reader.IsDBNull(9) ? null : reader.GetString(9),
-                reader.IsDBNull(10) ? "Active" : reader.GetString(10)));
+                effectiveMode,
+                deviceModeOverride));
         }
 
         return result;
@@ -1250,8 +1304,10 @@ public sealed class MySqlCatalogService : ICatalogService
         // Resolve device ativo pelo identifier -> portaria ativa associada a um evento ativo.
         // Se o mesmo identifier estiver associado a mais de um evento ativo (raro), prioriza
         // o evento em andamento (Running) e o mais recente.
+        // Traz o modo da portaria (eg.operation_mode) e o override do device (d.operation_mode)
         command.CommandText = """
-            SELECT d.id, d.name, d.identifier, d.device_type, d.operation_mode,
+            SELECT d.id, d.name, d.identifier, d.device_type, 
+                   eg.operation_mode as gate_mode, d.operation_mode as device_mode_override,
                    g.id, g.name,
                    e.id, e.name, e.status
             FROM fp_devices d
@@ -1269,17 +1325,22 @@ public sealed class MySqlCatalogService : ICatalogService
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
 
+        var gateMode = reader.IsDBNull(4) ? "Active" : reader.GetString(4);
+        var deviceModeOverride = reader.IsDBNull(5) ? null : reader.GetString(5);
+        var effectiveMode = deviceModeOverride ?? gateMode;  // Se tem override, usa; senão herda da portaria
+
         return new TurnstileDeviceResolution(
             ReadGuid(reader, 0),
             reader.GetString(1),
             reader.GetString(2),
             reader.GetString(3),
-            reader.IsDBNull(4) ? "Active" : reader.GetString(4),
-            ReadGuid(reader, 5),
-            reader.GetString(6),
-            ReadGuid(reader, 7),
-            reader.GetString(8),
-            reader.GetString(9));
+            effectiveMode,
+            deviceModeOverride,
+            ReadGuid(reader, 6),
+            reader.GetString(7),
+            ReadGuid(reader, 8),
+            reader.GetString(9),
+            reader.GetString(10));
     }
 
     public async Task TouchDeviceAsync(string identifier, CancellationToken cancellationToken = default)

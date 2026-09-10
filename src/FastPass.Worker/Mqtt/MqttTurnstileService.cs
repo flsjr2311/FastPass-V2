@@ -200,12 +200,16 @@ public sealed class MqttTurnstileService : BackgroundService
             return;
         }
 
-        // Verifica o modo de operação da catraca
-        if (device.OperationMode == "Blocked")
+        // ── Determina o modo efetivo ──────────────────────────────────────────
+        // Se o device tem override, usa ele; senão, usa o da portaria
+        var effectiveMode = device.OperationModeOverride ?? device.OperationMode;
+        
+        // Verifica o modo de operação da catraca/portaria
+        if (effectiveMode == "Blocked")
         {
             _logger.LogInformation(
-                "Catraca '{Device}' está BLOQUEADA. Leitura rejeitada (código: {Code})",
-                deviceId, read.CredentialCode);
+                "Catraca '{Device}' está BLOQUEADA (modo: {Mode}, override: {Override}). Leitura rejeitada (código: {Code})",
+                deviceId, device.OperationMode, device.OperationModeOverride, read.CredentialCode);
             // Envia comando de bloqueio para a catraca (não libera)
             var blockedResult = new AccessValidationResult(
                 AttemptId: Guid.NewGuid(),
@@ -232,11 +236,11 @@ public sealed class MqttTurnstileService : BackgroundService
             return;
         }
 
-        if (device.OperationMode == "Free")
+        if (effectiveMode == "Free")
         {
             _logger.LogInformation(
-                "Catraca '{Device}' em modo LIVRE (sem validação). Liberando entrada e saída.",
-                deviceId);
+                "Catraca '{Device}' em modo LIVRE (modo: {Mode}, override: {Override}). Liberando entrada e saída.",
+                deviceId, device.OperationMode, device.OperationModeOverride);
             // Sempre libera sem validar
             var freeResult = new AccessValidationResult(
                 AttemptId: Guid.NewGuid(),
