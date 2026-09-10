@@ -158,6 +158,8 @@ public sealed class MqttTurnstileService : BackgroundService
                     {
                         await RecordPresenceAsync(deviceId, telemetry);
                         await TouchDeviceAsync(deviceId);
+                        // Envia mensagem inicial do modo operacional (PASSE SEU INGRESSO, CATRACA LIBERADA, etc)
+                        await SendInitialModeMessageAsync(deviceId);
                     }
                     else
                     {
@@ -210,7 +212,8 @@ public sealed class MqttTurnstileService : BackgroundService
             _logger.LogInformation(
                 "Catraca '{Device}' está BLOQUEADA (modo: {Mode}, override: {Override}). Leitura rejeitada (código: {Code})",
                 deviceId, device.OperationMode, device.OperationModeOverride, read.CredentialCode);
-            // Envia comando de bloqueio para a catraca (não libera)
+            
+            // Envia comando com mensagem CATRACA BLOQUEADA
             var blockedResult = new AccessValidationResult(
                 AttemptId: Guid.NewGuid(),
                 Approved: false,
@@ -227,10 +230,11 @@ public sealed class MqttTurnstileService : BackgroundService
                 MaximumEntries: null,
                 EntriesUsed: null,
                 PeopleInside: null,
-                ArmAction: "KeepLocked",  // Mantém travado
+                ArmAction: "KeepLocked",
                 Pictogram: "RedCross",
                 ReasonCode: "CATRACA_BLOQUEADA",
-                Message: "CATRACA BLOQUEADA");
+                Message: "CATRACA\nBLOQUEADA");
+            
             var (verb, payload) = _codec.EncodeCommand(blockedResult);
             await PublishAsync(_topics.To(deviceId, verb), payload);
             return;
@@ -241,7 +245,8 @@ public sealed class MqttTurnstileService : BackgroundService
             _logger.LogInformation(
                 "Catraca '{Device}' em modo LIVRE (modo: {Mode}, override: {Override}). Liberando entrada e saída.",
                 deviceId, device.OperationMode, device.OperationModeOverride);
-            // Sempre libera sem validar
+            
+            // Envia comando com mensagem CATRACA LIBERADA
             var freeResult = new AccessValidationResult(
                 AttemptId: Guid.NewGuid(),
                 Approved: true,
@@ -258,16 +263,21 @@ public sealed class MqttTurnstileService : BackgroundService
                 MaximumEntries: null,
                 EntriesUsed: null,
                 PeopleInside: null,
-                ArmAction: "Unlock",  // Sempre libera
-                Pictogram: "GreenArrowEntry",
+                ArmAction: "Unlock",
+                Pictogram: "GreenArrowEntry",  // Seta verde
                 ReasonCode: "CATRACA_LIVRE",
-                Message: "CATRACA LIVRE");
+                Message: "CATRACA\nLIBERADA");
+            
             var (verb, payload) = _codec.EncodeCommand(freeResult);
             await PublishAsync(_topics.To(deviceId, verb), payload);
             return;
         }
 
-        // Mode == "Active": validar normalmente
+        // Mode == "Active": mostra mensagem inicial e valida depois
+        _logger.LogInformation(
+            "Catraca '{Device}' em modo ATIVO. Aguardando leitura de ingresso.",
+            deviceId);
+        
         var command = new ValidateAccessCommand(
             CredentialCode: read.CredentialCode,
             EventId: device.EventId,
@@ -322,6 +332,106 @@ public sealed class MqttTurnstileService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Falha ao registrar presença de '{Device}'.", deviceId);
+        }
+    }
+
+    /// <summary>
+    /// Envia a mensagem inicial do modo operacional da catraca.
+    /// Chamado no keepalive para mostrar: PASSE SEU INGRESSO, CATRACA LIBERADA, etc.
+    /// Best-effort.
+    /// </summary>
+    private async Task SendInitialModeMessageAsync(string deviceId)
+    {
+        try
+        {
+            using var scope = _services.CreateScope();
+            var catalog = scope.ServiceProvider.GetRequiredService<ICatalogService>();
+
+            var device = await catalog.ResolveTurnstileDeviceAsync(deviceId);
+            if (device is null) return;
+
+            var effectiveMode = device.OperationModeOverride ?? device.OperationMode;
+
+            AccessValidationResult modeMessage;
+
+            if (effectiveMode == "Blocked")
+            {
+                modeMessage = new AccessValidationResult(
+                    AttemptId: Guid.NewGuid(),
+                    Approved: false,
+                    Decision: "Rejected",
+                    CredentialType: "Unknown",
+                    Reason: "Catraca bloqueada.",
+                    StaffCredentialId: null,
+                    StaffMemberId: null,
+                    StaffName: null,
+                    IdempotentReplay: false,
+                    Channel: "Turnstile",
+                    Direction: "Entry",
+                    TicketId: null,
+                    MaximumEntries: null,
+                    EntriesUsed: null,
+                    PeopleInside: null,
+                    ArmAction: "KeepLocked",
+                    Pictogram: "RedCross",
+                    ReasonCode: "CATRACA_BLOQUEADA",
+                    Message: "CATRACA\nBLOQUEADA");
+            }
+            else if (effectiveMode == "Free")
+            {
+                modeMessage = new AccessValidationResult(
+                    AttemptId: Guid.NewGuid(),
+                    Approved: true,
+                    Decision: "Approved",
+                    CredentialType: "Unknown",
+                    Reason: null,
+                    StaffCredentialId: null,
+                    StaffMemberId: null,
+                    StaffName: null,
+                    IdempotentReplay: false,
+                    Channel: "Turnstile",
+                    Direction: "Entry",
+                    TicketId: null,
+                    MaximumEntries: null,
+                    EntriesUsed: null,
+                    PeopleInside: null,
+                    ArmAction: "Unlock",
+                    Pictogram: "GreenArrowEntry",
+                    ReasonCode: "CATRACA_LIVRE",
+                    Message: "CATRACA\nLIBERADA");
+            }
+            else  // Active
+            {
+                modeMessage = new AccessValidationResult(
+                    AttemptId: Guid.NewGuid(),
+                    Approved: false,
+                    Decision: "Pending",
+                    CredentialType: "Unknown",
+                    Reason: "Aguardando ingresso.",
+                    StaffCredentialId: null,
+                    StaffMemberId: null,
+                    StaffName: null,
+                    IdempotentReplay: false,
+                    Channel: "Turnstile",
+                    Direction: "Entry",
+                    TicketId: null,
+                    MaximumEntries: null,
+                    EntriesUsed: null,
+                    PeopleInside: null,
+                    ArmAction: "None",
+                    Pictogram: "None",  // Sem pictograma
+                    ReasonCode: "CATRACA_ATIVA",
+                    Message: "PASSE SEU\nINGRESSO");
+            }
+
+            var (verb, payload) = _codec.EncodeCommand(modeMessage);
+            await PublishAsync(_topics.To(deviceId, verb), payload);
+
+            _logger.LogDebug("Enviada mensagem inicial de modo para '{Device}': {Mode}", deviceId, effectiveMode);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Falha ao enviar mensagem inicial de modo para '{Device}'.", deviceId);
         }
     }
 
