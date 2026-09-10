@@ -1050,7 +1050,7 @@ public sealed class MySqlCatalogService : ICatalogService
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT d.id, d.gate_id, g.name, g.code, d.name, d.identifier,
-                   d.device_type, d.active, d.last_seen_at, d.configuration_json
+                   d.device_type, d.active, d.last_seen_at, d.configuration_json, d.operation_mode
             FROM fp_devices d
             INNER JOIN fp_gates g ON g.id = d.gate_id
             INNER JOIN fp_event_gates eg ON eg.gate_id = d.gate_id
@@ -1080,7 +1080,8 @@ public sealed class MySqlCatalogService : ICatalogService
                 reader.GetString(6),
                 Convert.ToBoolean(reader.GetValue(7)),
                 reader.IsDBNull(8) ? null : ReadDateTimeOffset(reader, 8),
-                reader.IsDBNull(9) ? null : reader.GetString(9)));
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.IsDBNull(10) ? "Active" : reader.GetString(10)));
         }
 
         return result;
@@ -1165,6 +1166,78 @@ public sealed class MySqlCatalogService : ICatalogService
         return (await ListDevicesAsync(eventId, gateId, false, cancellationToken)).Single(item => item.Id == deviceId);
     }
 
+    public async Task<DeviceView> SetDeviceOperationModeAsync(
+        Guid eventId,
+        Guid gateId,
+        Guid deviceId,
+        SetDeviceOperationModeCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(command.OperationMode))
+        {
+            throw new ArgumentException("OperationMode é obrigatório.");
+        }
+
+        // Valida o modo (Active, Free ou Blocked)
+        if (!Enum.TryParse<TurnstileOperationMode>(command.OperationMode, true, out var operationMode))
+        {
+            throw new ArgumentException("OperationMode deve ser Active, Free ou Blocked.");
+        }
+
+        if (deviceId == Guid.Empty)
+        {
+            throw new ArgumentException("DeviceId é obrigatório.");
+        }
+
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            if (!await ExistsAsync(
+                    connection,
+                    transaction,
+                    """
+                    SELECT COUNT(*)
+                    FROM fp_devices d
+                    INNER JOIN fp_event_gates eg
+                        ON eg.gate_id = d.gate_id
+                       AND eg.event_id = @event_id
+                    WHERE d.id = @device_id
+                      AND d.gate_id = @gate_id
+                      AND eg.active = 1;
+                    """,
+                    cancellationToken,
+                    ("@event_id", eventId.ToString()),
+                    ("@gate_id", gateId.ToString()),
+                    ("@device_id", deviceId.ToString())))
+            {
+                throw new ArgumentException("Dispositivo não encontrado ou não pertence à portaria/evento informado.");
+            }
+
+            await ExecuteAsync(connection, transaction, """
+                UPDATE fp_devices
+                SET operation_mode = @operation_mode,
+                    updated_at = @updated_at
+                WHERE id = @device_id
+                  AND gate_id = @gate_id;
+                """, cancellationToken,
+                ("@operation_mode", operationMode.ToString()),
+                ("@updated_at", DateTime.UtcNow),
+                ("@device_id", deviceId.ToString()),
+                ("@gate_id", gateId.ToString()));
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+
+        return (await ListDevicesAsync(eventId, gateId, false, cancellationToken)).Single(item => item.Id == deviceId);
+    }
+
     public async Task<TurnstileDeviceResolution?> ResolveTurnstileDeviceAsync(
         string identifier,
         CancellationToken cancellationToken = default)
@@ -1178,7 +1251,7 @@ public sealed class MySqlCatalogService : ICatalogService
         // Se o mesmo identifier estiver associado a mais de um evento ativo (raro), prioriza
         // o evento em andamento (Running) e o mais recente.
         command.CommandText = """
-            SELECT d.id, d.name, d.identifier, d.device_type,
+            SELECT d.id, d.name, d.identifier, d.device_type, d.operation_mode,
                    g.id, g.name,
                    e.id, e.name, e.status
             FROM fp_devices d
@@ -1201,11 +1274,12 @@ public sealed class MySqlCatalogService : ICatalogService
             reader.GetString(1),
             reader.GetString(2),
             reader.GetString(3),
-            ReadGuid(reader, 4),
-            reader.GetString(5),
-            ReadGuid(reader, 6),
-            reader.GetString(7),
-            reader.GetString(8));
+            reader.IsDBNull(4) ? "Active" : reader.GetString(4),
+            ReadGuid(reader, 5),
+            reader.GetString(6),
+            ReadGuid(reader, 7),
+            reader.GetString(8),
+            reader.GetString(9));
     }
 
     public async Task TouchDeviceAsync(string identifier, CancellationToken cancellationToken = default)

@@ -200,6 +200,70 @@ public sealed class MqttTurnstileService : BackgroundService
             return;
         }
 
+        // Verifica o modo de operação da catraca
+        if (device.OperationMode == "Blocked")
+        {
+            _logger.LogInformation(
+                "Catraca '{Device}' está BLOQUEADA. Leitura rejeitada (código: {Code})",
+                deviceId, read.CredentialCode);
+            // Envia comando de bloqueio para a catraca (não libera)
+            var blockedResult = new AccessValidationResult(
+                AttemptId: Guid.NewGuid(),
+                Approved: false,
+                Decision: "Rejected",
+                CredentialType: "Unknown",
+                Reason: "Catraca bloqueada.",
+                StaffCredentialId: null,
+                StaffMemberId: null,
+                StaffName: null,
+                IdempotentReplay: false,
+                Channel: "Turnstile",
+                Direction: "Entry",
+                TicketId: null,
+                MaximumEntries: null,
+                EntriesUsed: null,
+                PeopleInside: null,
+                ArmAction: "KeepLocked",  // Mantém travado
+                Pictogram: "RedCross",
+                ReasonCode: "CATRACA_BLOQUEADA",
+                Message: "CATRACA BLOQUEADA");
+            var (verb, payload) = _codec.EncodeCommand(blockedResult);
+            await PublishAsync(_topics.To(deviceId, verb), payload);
+            return;
+        }
+
+        if (device.OperationMode == "Free")
+        {
+            _logger.LogInformation(
+                "Catraca '{Device}' em modo LIVRE (sem validação). Liberando entrada e saída.",
+                deviceId);
+            // Sempre libera sem validar
+            var freeResult = new AccessValidationResult(
+                AttemptId: Guid.NewGuid(),
+                Approved: true,
+                Decision: "Approved",
+                CredentialType: "Unknown",
+                Reason: null,
+                StaffCredentialId: null,
+                StaffMemberId: null,
+                StaffName: null,
+                IdempotentReplay: false,
+                Channel: "Turnstile",
+                Direction: "Entry",
+                TicketId: null,
+                MaximumEntries: null,
+                EntriesUsed: null,
+                PeopleInside: null,
+                ArmAction: "Unlock",  // Sempre libera
+                Pictogram: "GreenArrowEntry",
+                ReasonCode: "CATRACA_LIVRE",
+                Message: "CATRACA LIVRE");
+            var (verb, payload) = _codec.EncodeCommand(freeResult);
+            await PublishAsync(_topics.To(deviceId, verb), payload);
+            return;
+        }
+
+        // Mode == "Active": validar normalmente
         var command = new ValidateAccessCommand(
             CredentialCode: read.CredentialCode,
             EventId: device.EventId,
@@ -217,8 +281,8 @@ public sealed class MqttTurnstileService : BackgroundService
             deviceId, device.GateName, device.EventName, read.CredentialCode,
             result.Decision, result.Direction, result.ArmAction);
 
-        var (verb, responsePayload) = _codec.EncodeCommand(result);
-        await PublishAsync(_topics.To(deviceId, verb), responsePayload);
+        var (verb2, responsePayload) = _codec.EncodeCommand(result);
+        await PublishAsync(_topics.To(deviceId, verb2), responsePayload);
     }
 
     private async Task TouchDeviceAsync(string deviceId)

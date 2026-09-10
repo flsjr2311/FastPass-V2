@@ -70,6 +70,16 @@ public enum GateOperationMode
     EntryAndExitValidated
 }
 
+public enum TurnstileOperationMode
+{
+    /// <summary>Catraca ativa: lê ingresso, valida e libera se autorizado.</summary>
+    Active,
+    /// <summary>Catraca liberada: gira livremente para ambos os lados (sem validação).</summary>
+    Free,
+    /// <summary>Catraca bloqueada: não gira para nenhum lado (totalmente travada).</summary>
+    Blocked
+}
+
 public enum ArmAction
 {
     None,

@@ -406,6 +406,13 @@ app.MapPut("/api/events/{eventId:guid}/gates/{gateId:guid}/devices/{deviceId:gui
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
+app.MapPut("/api/events/{eventId:guid}/gates/{gateId:guid}/devices/{deviceId:guid}/operation-mode", async (Guid eventId, Guid gateId, Guid deviceId, SetDeviceOperationModeCommand command, ICatalogService svc, HttpContext ctx, CancellationToken ct) =>
+{
+    if (ctx.RequirePermission("dispositivo.gerenciar") is { } e) return e;
+    try { return Results.Ok(await svc.SetDeviceOperationModeAsync(eventId, gateId, deviceId, command, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
 // Monitoramento GLOBAL de catracas MQTT: todas as placas já vistas (mesmo não cadastradas),
 // status online/offline, firmware/IP e a portaria/evento a que estão atribuídas.
 app.MapGet("/api/turnstiles", async (int? onlineWindowSeconds, ITurnstileMonitoringService svc, HttpContext ctx, CancellationToken ct) =>

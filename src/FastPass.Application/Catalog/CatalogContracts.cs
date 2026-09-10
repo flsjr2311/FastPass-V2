@@ -95,6 +95,9 @@ public sealed record UpdateDeviceCommand(
     string? ConfigurationJson = null,
     bool Active = true);
 
+public sealed record SetDeviceOperationModeCommand(
+    string OperationMode);
+
 public sealed record DeviceView(
     Guid Id,
     Guid EventId,
@@ -106,7 +109,8 @@ public sealed record DeviceView(
     string DeviceType,
     bool Active,
     DateTimeOffset? LastSeenAt,
-    string? ConfigurationJson);
+    string? ConfigurationJson,
+    string OperationMode = "Active");
 
 /// <summary>
 /// Resolução de um dispositivo (catraca) a partir do seu identifier — o "nome"
@@ -118,6 +122,7 @@ public sealed record TurnstileDeviceResolution(
     string DeviceName,
     string Identifier,
     string DeviceType,
+    string OperationMode,
     Guid GateId,
     string GateName,
     Guid EventId,
@@ -310,6 +315,13 @@ public interface ICatalogService
         Guid gateId,
         Guid deviceId,
         UpdateDeviceCommand command,
+        CancellationToken cancellationToken = default);
+
+    Task<DeviceView> SetDeviceOperationModeAsync(
+        Guid eventId,
+        Guid gateId,
+        Guid deviceId,
+        SetDeviceOperationModeCommand command,
         CancellationToken cancellationToken = default);
 
     /// <summary>
