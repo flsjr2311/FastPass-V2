@@ -263,7 +263,7 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
   recebe telemetria/leitura, valida via canal Turnstile e comanda liberar/negar) + **painel de
   monitoramento** (tela "Catracas": placas identificadas, online/offline, firmware/IP e atribuição
   a portaria/evento). Falta confirmar o protocolo de leitura/comando do firmware (Neon 1.2) e o
-  teste fim-a-fim com a catraca girando. Notas em `tools/mqtt/PROTOCOLO-INDIUM.md`.
+  teste fim-a-fim com a catraca girando. Notas em `tools/mqtt/PROTOCOLO-NEON.md`.
 
 ### Prioridade Alta
 - [ ] Confirmar protocolo da placa (verbo/payload de leitura e de comando) e cadastrar a catraca como device `Mqtt`

@@ -1,4 +1,4 @@
-# Engenharia reversa — protocolo MQTT da catraca Indium (Iongrade)
+# Engenharia reversa — protocolo MQTT da catraca Neon (Iongrade)
 
 Notas da captura de tráfego (engenharia reversa). O manual de hardware descreve
 as telas de config, mas NÃO traz o contrato MQTT — descoberto por captura.

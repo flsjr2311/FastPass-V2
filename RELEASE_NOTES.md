@@ -72,7 +72,7 @@ Rodada de correções, refinamentos operacionais e limpeza estrutural preparando
 #### Integração MQTT com catracas (fundação)
 - Novo serviço MQTT hospedado no **FastPass.Worker** (MQTTnet): conecta ao broker, escuta as catracas (`<Facility>/<Device>/from/#`), atualiza o heartbeat do dispositivo e, ao receber uma leitura, valida pelo canal **Turnstile** (que infere o sentido) e publica o comando de liberar/negar no tópico `.../to/...`.
 - A catraca envia apenas `{código lido, nome da catraca}`; a relação catraca↔portaria e o sentido a liberar são decididos pelo servidor. O "nome da catraca" é o `identifier` do device (`device_type = Mqtt`), que resolve portaria e evento.
-- Tradução do protocolo isolada em um único ponto (`TurnstileMessageCodec`), pronta para ajuste fino quando a documentação do firmware for confirmada. Notas de engenharia reversa em `tools/mqtt/PROTOCOLO-INDIUM.md`.
+- Tradução do protocolo isolada em um único ponto (`TurnstileMessageCodec`), pronta para ajuste fino quando a documentação do firmware for confirmada. Notas de engenharia reversa em `tools/mqtt/PROTOCOLO-NEON.md`.
 - Config na seção `Mqtt` do `appsettings` (broker, porta, credenciais, FacilityId), com liga/desliga por `Mqtt:Enabled`.
 - **Painel de monitoramento de catracas** (tela "Catracas"): lista todas as placas já identificadas via MQTT — mesmo antes de serem cadastradas — com status online/offline, firmware, IP, série e a portaria/evento a que estão atribuídas (ou aviso de "não atribuída"). Alimentado pela presença que o Worker registra (`fp_turnstile_presence`, migração 022) a partir da telemetria da placa; endpoint `GET /api/turnstiles`. Auto-atualização a cada 10s.
 
