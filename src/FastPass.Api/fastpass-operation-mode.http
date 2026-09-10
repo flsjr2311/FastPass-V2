@@ -1,0 +1,48 @@
+@host = http://localhost:5088
+
+# ===============================================================================
+# Testing TurnstileOperationMode (Active/Free/Blocked)
+# ===============================================================================
+# Replace these variables with actual IDs from your database:
+# - eventId: From fp_events.id (Running status preferred)
+# - gateId: From fp_gates.id
+# - deviceId: From fp_devices.id
+
+@eventId = 12345678-1234-1234-1234-123456789012
+@gateId = 87654321-4321-4321-4321-210987654321
+@deviceId = aaaabbbb-cccc-dddd-eeee-ffff00001111
+
+###
+# Step 1: List all devices to get valid IDs
+# GET {{host}}/api/events/{{eventId}}/devices
+
+###
+# Step 2: Set device to FREE mode (catraca gira livremente, sem validação)
+PUT {{host}}/api/events/{{eventId}}/gates/{{gateId}}/devices/{{deviceId}}/operation-mode
+Content-Type: application/json
+
+{
+  "operationMode": "Free"
+}
+
+###
+# Step 3: Set device to BLOCKED mode (catraca travada, não gira)
+PUT {{host}}/api/events/{{eventId}}/gates/{{gateId}}/devices/{{deviceId}}/operation-mode
+Content-Type: application/json
+
+{
+  "operationMode": "Blocked"
+}
+
+###
+# Step 4: Set device back to ACTIVE mode (validação normal)
+PUT {{host}}/api/events/{{eventId}}/gates/{{gateId}}/devices/{{deviceId}}/operation-mode
+Content-Type: application/json
+
+{
+  "operationMode": "Active"
+}
+
+###
+# Step 5: Get device details to verify operationMode
+GET {{host}}/api/events/{{eventId}}/devices?gateId={{gateId}}
