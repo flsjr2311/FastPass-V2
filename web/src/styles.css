@@ -857,3 +857,492 @@ td[colspan] { white-space: normal; }
 .config-content-panel {
   margin-bottom: 18px;
 }
+
+
+/* ── Turnstile Mode Controls ─────────────────────────────────────────────────── */
+.config-turnstile-panel {
+  margin-bottom: 18px;
+}
+
+.turnstile-controls-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  gap: 18px;
+  padding: 20px 0;
+}
+
+.turnstile-control-card {
+  border: 1px solid #e3e9f3;
+  border-radius: 12px;
+  background: #fafbfc;
+  padding: 20px;
+  box-shadow: 0 2px 6px #f0f2f5;
+  transition: all 0.2s ease;
+}
+
+.turnstile-control-card:hover {
+  border-color: #d4dce9;
+  box-shadow: 0 4px 12px #e8eef7;
+}
+
+.control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e8ecf3;
+}
+
+.control-header h4 {
+  margin: 0;
+  font: 600 15px 'DM Sans';
+  color: #1b2940;
+}
+
+.gate-code {
+  padding: 4px 8px;
+  background: #eef2f9;
+  color: #5b72c9;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.control-body {
+  display: grid;
+  gap: 16px;
+}
+
+.control-section {
+  display: grid;
+  gap: 12px;
+}
+
+.control-label {
+  display: block;
+  color: #556f8f;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mode-selector {
+  display: flex;
+  gap: 10px;
+}
+
+.mode-button {
+  flex: 1;
+  padding: 12px 10px;
+  border: 2px solid #dfe5ee;
+  border-radius: 10px;
+  background: #fff;
+  color: #556f8f;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.mode-button:hover:not(:disabled) {
+  border-color: #5b72c9;
+  background: #f5f8ff;
+  color: #5b72c9;
+}
+
+.mode-button.selected {
+  border-color: #5b72c9;
+  background: #eef2f9;
+  color: #1b2940;
+  box-shadow: inset 0 0 0 1px #5b72c9;
+}
+
+.mode-button.loading {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.mode-button:disabled {
+  cursor: default;
+}
+
+.mode-icon {
+  display: block;
+  font-size: 20px;
+}
+
+.mode-name {
+  display: block;
+  font-weight: 700;
+}
+
+.mode-button small {
+  display: block;
+  font-size: 9px;
+  color: #8995a8;
+  font-weight: 400;
+}
+
+.control-info {
+  padding: 12px;
+  background: #eff4fc;
+  border-left: 3px solid #7796ff;
+  border-radius: 6px;
+}
+
+.info-text {
+  margin: 0;
+  color: #556f8f;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Device override controls (to be added in devices table) */
+.device-mode-override {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.device-mode-badge {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.device-mode-badge.active {
+  background: #e8f3f8;
+  color: #0d6db1;
+}
+
+.device-mode-badge.free {
+  background: #e8f8e8;
+  color: #0d6d0d;
+}
+
+.device-mode-badge.blocked {
+  background: #f8e8e8;
+  color: #6d0d0d;
+}
+
+.device-mode-badge.default {
+  background: #f3f3f3;
+  color: #666;
+}
+
+
+/* ── Devices Table ─────────────────────────────────────────────────────────── */
+.config-devices-panel {
+  margin-bottom: 18px;
+}
+
+.devices-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.devices-table thead {
+  background: #f8fafd;
+  border-bottom: 2px solid #e8ecf3;
+}
+
+.devices-table th {
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: #556f8f;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.devices-table tbody tr {
+  border-bottom: 1px solid #e8ecf3;
+  transition: background 0.1s ease;
+}
+
+.devices-table tbody tr:hover {
+  background: #f8fafd;
+}
+
+.devices-table tbody tr.has-override {
+  background: #fffbf0;
+}
+
+.devices-table td {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #33435d;
+  vertical-align: middle;
+}
+
+.devices-table td strong {
+  display: block;
+  font-weight: 600;
+  color: #1b2940;
+}
+
+.devices-table td small {
+  display: block;
+  font-size: 11px;
+  color: #8995a8;
+  margin-top: 3px;
+}
+
+.devices-table td .table-id {
+  font-family: 'Courier New', monospace;
+  color: #99a4b4;
+}
+
+.device-type-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #eef2f9;
+  color: #5b72c9;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mode-badge.mode-active {
+  background: #eef2f9;
+  color: #5b72c9;
+}
+
+.mode-badge.mode-free {
+  background: #e8f8e8;
+  color: #0d6d0d;
+}
+
+.mode-badge.mode-blocked {
+  background: #f8e8e8;
+  color: #6d0d0d;
+}
+
+.mode-badge.effective {
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.override-select {
+  padding: 8px 10px;
+  border: 1px solid #dfe5ee;
+  border-radius: 6px;
+  background: #fff;
+  color: #33435d;
+  font-size: 12px;
+  font-weight: 600;
+  outline: 0;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.override-select:hover {
+  border-color: #5b72c9;
+  background: #f8faff;
+}
+
+.override-select:focus {
+  border-color: #5b72c9;
+  box-shadow: 0 0 0 3px #5b72c966;
+}
+
+.override-select:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.saving-indicator {
+  display: inline-block;
+  margin-left: 8px;
+  color: #5b72c9;
+  font-weight: 700;
+}
+
+.action-cell {
+  text-align: center;
+}
+
+.small-button {
+  padding: 6px 12px;
+  border: 1px solid #dfe5ee;
+  border-radius: 6px;
+  background: #fff;
+  color: #556f8f;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.small-button:hover:not(:disabled) {
+  border-color: #8995a8;
+  background: #f8fafd;
+  color: #1b2940;
+}
+
+.small-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.small-button.reset-button {
+  border-color: #f8e8e8;
+  color: #6d0d0d;
+  background: #fff8f8;
+}
+
+.small-button.reset-button:hover:not(:disabled) {
+  border-color: #f0c0c0;
+  background: #ffe8e8;
+}
+
+
+/* ── Turnstile Mode Modal ──────────────────────────────────────────────────── */
+.mode-modal .modal-body {
+  display: grid;
+  gap: 16px;
+}
+
+.mode-info {
+  padding: 12px;
+  background: #f8fafd;
+  border: 1px solid #e8ecf3;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.info-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #556f8f;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mode-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.mode-controls .control-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #556f8f;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mode-buttons-vertical {
+  display: grid;
+  gap: 8px;
+}
+
+.mode-button-full {
+  padding: 12px 14px;
+  border: 2px solid #dfe5ee;
+  border-radius: 10px;
+  background: #fff;
+  color: #556f8f;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mode-button-full:hover:not(:disabled) {
+  border-color: #5b72c9;
+  background: #f8faff;
+  color: #5b72c9;
+}
+
+.mode-button-full.selected {
+  border-color: #5b72c9;
+  background: #eef2f9;
+  color: #1b2940;
+  box-shadow: inset 0 0 0 1px #5b72c9;
+}
+
+.mode-button-full.remove-button {
+  border-color: #f0c0c0;
+  color: #6d0d0d;
+  background: #fff8f8;
+}
+
+.mode-button-full.remove-button:hover:not(:disabled) {
+  border-color: #e08080;
+  background: #ffe8e8;
+}
+
+.mode-button-full:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.mode-button-full .mode-icon {
+  display: block;
+  font-size: 20px;
+  min-width: 24px;
+}
+
+.mode-button-full .mode-name {
+  display: block;
+  font-weight: 700;
+}
+
+.mode-button-full small {
+  display: block;
+  font-size: 11px;
+  color: #8995a8;
+  font-weight: 400;
+  margin-left: auto;
+}
+
+.turnstile-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.turnstile-actions button {
+  flex: 1;
+  min-height: 36px;
+}

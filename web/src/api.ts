@@ -124,6 +124,16 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ operationMode }),
     }),
+  setGateTurnstileMode: (eventId: string, gateId: string, turnstileMode: string) =>
+    request<GateView>(`/api/events/${eventId}/gates/${gateId}/turnstile-mode`, {
+      method: 'PUT',
+      body: JSON.stringify({ turnstileMode }),
+    }),
+  setDeviceOperationMode: (eventId: string, gateId: string, deviceId: string, operationMode: string) =>
+    request<DeviceView>(`/api/events/${eventId}/gates/${gateId}/devices/${deviceId}/operation-mode`, {
+      method: 'PUT',
+      body: JSON.stringify({ operationMode }),
+    }),
   createGate: (eventId: string, payload: { name: string; code?: string }) =>
     request<GateView>(`/api/events/${eventId}/gates`, { method: 'POST', body: JSON.stringify(payload) }),
   listDevices: (eventId: string, gateId?: string, activeOnly = false) => request<DeviceView[]>(`/api/events/${eventId}/devices?${new URLSearchParams({ ...(gateId ? { gateId } : {}), activeOnly: String(activeOnly) }).toString()}`),

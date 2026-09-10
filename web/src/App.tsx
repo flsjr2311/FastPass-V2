@@ -1086,9 +1086,11 @@ function ConfigurationView({ eventId }: { eventId: string }) {
   const [selectedGateId, setSelectedGateId] = useState('');
   const [sectors, setSectors] = useState<SectorView[]>([]);
   const [rules, setRules] = useState<GateSectorView[]>([]);
+  const [devices, setDevices] = useState<DeviceView[]>([]);
   const [cellSavingKey, setCellSavingKey] = useState<string | null>(null);
   const [removingKey, setRemovingKey] = useState<string | null>(null);
   const [modeSavingKey, setModeSavingKey] = useState<string | null>(null);
+  const [deviceSavingKey, setDeviceSavingKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1097,7 +1099,7 @@ function ConfigurationView({ eventId }: { eventId: string }) {
   const [sectorName, setSectorName] = useState('');
   const [sectorCapacity, setSectorCapacity] = useState('');
   const [catalogSaving, setCatalogSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'gates' | 'sectors' | 'matrix'>('gates');
+  const [activeTab, setActiveTab] = useState<'gates' | 'sectors' | 'matrix' | 'turnstile' | 'devices'>('gates');
 
   useEffect(() => {
     if (!eventId) {
@@ -1117,13 +1119,15 @@ function ConfigurationView({ eventId }: { eventId: string }) {
     setSelectedGateId('');
     setSectors([]);
     setRules([]);
-    Promise.all([api.listGates(eventId), api.listSectors(eventId), api.listGateSectors(eventId)])
-      .then(([gateResult, sectorResult, ruleResult]) => {
+    setDevices([]);
+    Promise.all([api.listGates(eventId), api.listSectors(eventId), api.listGateSectors(eventId), api.listDevices(eventId, undefined, false)])
+      .then(([gateResult, sectorResult, ruleResult, deviceResult]) => {
         if (cancelled) return;
         setGates(gateResult);
         setSelectedGateId((current) => current && gateResult.some((gate) => gate.id === current) ? current : gateResult[0]?.id ?? '');
         setSectors(sectorResult);
         setRules(ruleResult);
+        setDevices(deviceResult);
       })
       .catch((reason: unknown) => {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a configuração.');
@@ -1237,6 +1241,45 @@ function ConfigurationView({ eventId }: { eventId: string }) {
     }
   }
 
+  async function handleSetTurnstileMode(gate: GateView, turnstileMode: string) {
+    if (gate.turnstileMode === turnstileMode) return;
+    const key = `turnstile-mode:${gate.id}`;
+    setModeSavingKey(key);
+    setError(null);
+    setMessage(null);
+    try {
+      const updated = await api.setGateTurnstileMode(eventId, gate.id, turnstileMode);
+      setGates((current) => current.map((item) => item.id === updated.id ? updated : item));
+      const modeLabel = turnstileMode === 'Active' ? 'ATIVA (lendo ingresso)' : turnstileMode === 'Free' ? 'LIBERADA' : 'BLOQUEADA';
+      setMessage(`Modo da catraca em "${gate.name}" agora é ${modeLabel}.`);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o modo da catraca.');
+    } finally {
+      setModeSavingKey(null);
+    }
+  }
+
+  async function handleSetDeviceOverride(device: DeviceView, operationMode: string | null) {
+    if (device.operationModeOverride === operationMode) return;
+    const key = `device-override:${device.id}`;
+    setDeviceSavingKey(key);
+    setError(null);
+    setMessage(null);
+    try {
+      const updated = await api.setDeviceOperationMode(eventId, device.gateId, device.id, operationMode ?? 'Active');
+      setDevices((current) => current.map((item) => item.id === updated.id ? updated : item));
+      const gateMode = gates.find(g => g.id === device.gateId)?.turnstileMode ?? 'Active';
+      const effectiveMode = operationMode ?? gateMode;
+      const modeLabel = effectiveMode === 'Active' ? 'ATIVA' : effectiveMode === 'Free' ? 'LIBERADA' : 'BLOQUEADA';
+      const source = operationMode ? 'Override' : 'Herdado da portaria';
+      setMessage(`Device "${device.name}" → ${modeLabel} (${source}).`);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o override do device.');
+    } finally {
+      setDeviceSavingKey(null);
+    }
+  }
+
   async function handleToggleMatrix(gateIdToChange: string, sectorIdToChange: string, directionToChange: string, checked: boolean) {
     const existing = rules.find((rule) => rule.gateId === gateIdToChange && rule.sectorId === sectorIdToChange && rule.direction === directionToChange);
     const key = `${gateIdToChange}:${sectorIdToChange}:${directionToChange}`;
@@ -1301,6 +1344,8 @@ function ConfigurationView({ eventId }: { eventId: string }) {
         <button className={`tab-button ${activeTab === 'gates' ? 'active' : ''}`} onClick={() => setActiveTab('gates')}>🚪 Portarias</button>
         <button className={`tab-button ${activeTab === 'sectors' ? 'active' : ''}`} onClick={() => setActiveTab('sectors')}>🎪 Setores</button>
         <button className={`tab-button ${activeTab === 'matrix' ? 'active' : ''}`} onClick={() => setActiveTab('matrix')}>🔗 Matriz</button>
+        <button className={`tab-button ${activeTab === 'turnstile' ? 'active' : ''}`} onClick={() => setActiveTab('turnstile')}>⊟ Modo Catraca</button>
+        <button className={`tab-button ${activeTab === 'devices' ? 'active' : ''}`} onClick={() => setActiveTab('devices')}>📱 Dispositivos</button>
       </div>
     </section>
 
@@ -1312,6 +1357,146 @@ function ConfigurationView({ eventId }: { eventId: string }) {
 
     {/* Tab Content: Matriz */}
     {activeTab === 'matrix' && <section className="panel config-rules-panel"><div className="panel-heading"><div><p className="panel-kicker">MATRIZ DE ACESSO</p><h2>Portarias × setores</h2></div><div className="matrix-legend"><span><i className="entry-mark">↓</i>Entrada</span><span><i className="exit-mark">↑</i>Saída</span></div></div>{loading ? <div className="table-loading"><span className="spinner" />Carregando...</div> : gates.length === 0 || sectors.length === 0 ? <EmptyState message="Crie portarias e setores." /> : <GateSectorMatrix gates={gates} sectors={sectors} rules={rules} savingKey={cellSavingKey} removingKey={removingKey} modeSavingKey={modeSavingKey} onToggle={handleToggleMatrix} onRemoveGate={handleRemoveGate} onRemoveSector={handleRemoveSector} onSetMode={handleSetMode} />}</section>}
+
+    {/* Tab Content: Modo Catraca */}
+    {activeTab === 'turnstile' && <section className="panel config-turnstile-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="panel-kicker">MODO DE OPERAÇÃO</p>
+          <h2>Controle de catracas</h2>
+          <p className="panel-subtitle">Defina o comportamento de cada catraca: ativa (lê ingresso), liberada (gira livremente) ou bloqueada (não gira).</p>
+        </div>
+      </div>
+      {loading ? <div className="table-loading"><span className="spinner" />Carregando...</div> : gates.length === 0 ? <EmptyState message="Crie portarias primeiro." /> : <div className="turnstile-controls-container">
+        {gates.map((gate) => (
+          <div key={gate.id} className="turnstile-control-card">
+            <div className="control-header">
+              <h4>🚪 {gate.name}</h4>
+              <span className="gate-code">{gate.code}</span>
+            </div>
+            <div className="control-body">
+              <div className="control-section">
+                <label className="control-label">Modo padrão da portaria:</label>
+                <div className="mode-selector">
+                  <button
+                    className={`mode-button ${gate.turnstileMode === 'Active' ? 'selected' : ''} ${modeSavingKey === `turnstile-mode:${gate.id}` ? 'loading' : ''}`}
+                    onClick={() => handleSetTurnstileMode(gate, 'Active')}
+                    disabled={modeSavingKey === `turnstile-mode:${gate.id}`}
+                    title="PASSE SEU INGRESSO - Display aguarda leitura"
+                  >
+                    <span className="mode-icon">📖</span>
+                    <span className="mode-name">ATIVA</span>
+                    <small>lê ingresso</small>
+                  </button>
+                  <button
+                    className={`mode-button ${gate.turnstileMode === 'Free' ? 'selected' : ''} ${modeSavingKey === `turnstile-mode:${gate.id}` ? 'loading' : ''}`}
+                    onClick={() => handleSetTurnstileMode(gate, 'Free')}
+                    disabled={modeSavingKey === `turnstile-mode:${gate.id}`}
+                    title="LIBERADA ENTRE - Display exibe seta verde, gira livremente"
+                  >
+                    <span className="mode-icon">🟢</span>
+                    <span className="mode-name">LIBERADA</span>
+                    <small>gira livremente</small>
+                  </button>
+                  <button
+                    className={`mode-button ${gate.turnstileMode === 'Blocked' ? 'selected' : ''} ${modeSavingKey === `turnstile-mode:${gate.id}` ? 'loading' : ''}`}
+                    onClick={() => handleSetTurnstileMode(gate, 'Blocked')}
+                    disabled={modeSavingKey === `turnstile-mode:${gate.id}`}
+                    title="BLOQUEADA CADEADO - Display exibe cruz vermelha, não gira"
+                  >
+                    <span className="mode-icon">🔴</span>
+                    <span className="mode-name">BLOQUEADA</span>
+                    <small>não gira</small>
+                  </button>
+                </div>
+              </div>
+              <div className="control-info">
+                <p className="info-text">ℹ️ Cada catraca individual pode ter um override deste modo. Configure na aba Dispositivos.</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>}
+    </section>}
+
+    {/* Tab Content: Dispositivos */}
+    {activeTab === 'devices' && <section className="panel config-devices-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="panel-kicker">DISPOSITIVOS</p>
+          <h2>Controle individual de catracas</h2>
+          <p className="panel-subtitle">Configure o modo de operação de cada catraca. Deixe vazio para herdar o modo padrão da portaria.</p>
+        </div>
+        <span className="catalog-count">{devices.length}</span>
+      </div>
+      {loading ? <div className="table-loading"><span className="spinner" />Carregando...</div> : devices.length === 0 ? <EmptyState message="Nenhum dispositivo cadastrado. Crie uma portaria e adicione catracas." /> : <div className="table-scroll">
+        <table className="devices-table">
+          <thead>
+            <tr>
+              <th>Nome da Catraca</th>
+              <th>Portaria</th>
+              <th>Tipo</th>
+              <th>Modo Padrão (Gate)</th>
+              <th>Override (Device)</th>
+              <th>Modo Efetivo</th>
+              <th style={{ width: '120px' }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {devices.map((device) => {
+              const gate = gates.find(g => g.id === device.gateId);
+              const gateMode = gate?.turnstileMode ?? 'Active';
+              const effectiveMode = device.operationModeOverride ?? gateMode;
+              const hasModeOverride = Boolean(device.operationModeOverride);
+              return (
+                <tr key={device.id} className={hasModeOverride ? 'has-override' : ''}>
+                  <td><strong>{device.name}</strong><small className="table-id">{device.identifier || 'sem identifier'}</small></td>
+                  <td><span>{device.gateName}</span></td>
+                  <td><span className="device-type-badge">{device.deviceType}</span></td>
+                  <td>
+                    <span className={`mode-badge mode-${gateMode.toLowerCase()}`}>
+                      {gateMode === 'Active' ? '📖' : gateMode === 'Free' ? '🟢' : '🔴'} {gateMode === 'Active' ? 'ATIVA' : gateMode === 'Free' ? 'LIBERADA' : 'BLOQUEADA'}
+                    </span>
+                  </td>
+                  <td>
+                    <select
+                      className="override-select"
+                      value={device.operationModeOverride ?? ''}
+                      onChange={(e) => handleSetDeviceOverride(device, e.target.value || null)}
+                      disabled={deviceSavingKey === `device-override:${device.id}`}
+                      title="Deixe vazio para herdar do padrão da portaria"
+                    >
+                      <option value="">Herdar do padrão</option>
+                      <option value="Active">📖 ATIVA</option>
+                      <option value="Free">🟢 LIBERADA</option>
+                      <option value="Blocked">🔴 BLOQUEADA</option>
+                    </select>
+                    {deviceSavingKey === `device-override:${device.id}` && <span className="saving-indicator">...</span>}
+                  </td>
+                  <td>
+                    <span className={`mode-badge mode-${effectiveMode.toLowerCase()} effective`}>
+                      {effectiveMode === 'Active' ? '📖' : effectiveMode === 'Free' ? '🟢' : '🔴'} {effectiveMode === 'Active' ? 'ATIVA' : effectiveMode === 'Free' ? 'LIBERADA' : 'BLOQUEADA'}
+                    </span>
+                  </td>
+                  <td className="action-cell">
+                    {hasModeOverride && (
+                      <button
+                        className="small-button reset-button"
+                        onClick={() => handleSetDeviceOverride(device, null)}
+                        disabled={deviceSavingKey === `device-override:${device.id}`}
+                        title="Remover override e herdar padrão"
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>}
+    </section>}
   </>;
 }
 
@@ -1331,6 +1516,8 @@ function TurnstilesView() {
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTurnstile, setModalTurnstile] = useState<TurnstileMonitorView | null>(null);
+  const [modeModalOpen, setModeModalOpen] = useState(false);
+  const [modeTurnstile, setModeTurnstile] = useState<TurnstileMonitorView | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -1368,14 +1555,15 @@ function TurnstilesView() {
         : items.length === 0
           ? <EmptyState message="Nenhuma catraca se conectou ainda. Aponte a placa para o broker MQTT." />
           : <div className="turnstile-grid">
-              {items.map((t) => <TurnstileCard key={t.deviceId} t={t} onAssignClick={() => { setModalTurnstile(t); setModalOpen(true); }} />)}
+              {items.map((t) => <TurnstileCard key={t.deviceId} t={t} onAssignClick={() => { setModalTurnstile(t); setModalOpen(true); }} onModeClick={() => { setModeTurnstile(t); setModeModalOpen(true); }} />)}
             </div>}
     </section>
     {modalOpen && modalTurnstile && <TurnstileAssignmentModal turnstile={modalTurnstile} onClose={() => { setModalOpen(false); setModalTurnstile(null); }} />}
+    {modeModalOpen && modeTurnstile && <TurnstileModeModal turnstile={modeTurnstile} onClose={() => { setModeModalOpen(false); setModeTurnstile(null); }} onModeChanged={() => { setItems(null); }} />}
   </>;
 }
 
-function TurnstileCard({ t, onAssignClick }: { t: TurnstileMonitorView; onAssignClick: () => void }) {
+function TurnstileCard({ t, onAssignClick, onModeClick }: { t: TurnstileMonitorView; onAssignClick: () => void; onModeClick: () => void }) {
   const assigned = Boolean(t.deviceRegistrationId && t.gateId);
   return <article className={`turnstile-card ${t.online ? '' : 'offline'}`}>
     <div className="turnstile-head">
@@ -1399,11 +1587,18 @@ function TurnstileCard({ t, onAssignClick }: { t: TurnstileMonitorView; onAssign
           </div>
         : <span className="unassigned">⚠️ Sem atribuição</span>}
     </div>
-    {!assigned && t.online && (
-      <button className="primary-button" style={{ width: '100%', marginTop: 8 }} onClick={onAssignClick}>
-        Atribuir agora
-      </button>
-    )}
+    <div className="turnstile-actions">
+      {!assigned && t.online && (
+        <button className="primary-button" onClick={onAssignClick}>
+          Atribuir agora
+        </button>
+      )}
+      {assigned && t.online && (
+        <button className="secondary-button" onClick={onModeClick} title="Controlar modo: Ativa / Liberada / Bloqueada">
+          ⊟ Modo
+        </button>
+      )}
+    </div>
   </article>;
 }
 
@@ -1493,6 +1688,146 @@ function TurnstileAssignmentModal({ turnstile, onClose }: { turnstile: Turnstile
           <button className="primary-button" onClick={handleAssign} disabled={saving || !selectedEventId || !selectedGateId}>
             {saving ? 'Atribuindo...' : 'Atribuir'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Modal para controlar o modo de operação de uma catraca (override) */
+function TurnstileModeModal({ turnstile, onClose, onModeChanged }: { turnstile: TurnstileMonitorView; onClose: () => void; onModeChanged: () => void }) {
+  const [events, setEvents] = useState<EventView[]>([]);
+  const [devices, setDevices] = useState<DeviceView[]>([]);
+  const [selectedMode, setSelectedMode] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const device = devices.find(d => d.id === turnstile.deviceRegistrationId);
+  const currentMode = device?.operationModeOverride ?? device?.operationMode ?? 'Active';
+
+  useEffect(() => {
+    if (turnstile.eventId && turnstile.deviceRegistrationId) {
+      api.listDevices(turnstile.eventId).then((devs) => {
+        setDevices(devs);
+        const found = devs.find(d => d.id === turnstile.deviceRegistrationId);
+        setSelectedMode(found?.operationModeOverride ?? null);
+      }).catch(() => {});
+    }
+  }, [turnstile]);
+
+  async function handleSetMode(mode: string | null) {
+    if (!device || !turnstile.eventId) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.setDeviceOperationMode(turnstile.eventId, device.gateId, device.id, mode ?? 'Active');
+      setSelectedMode(mode);
+      const modeLabel = (mode ?? device.operationMode ?? 'Active') === 'Active' ? 'ATIVA' : (mode ?? device.operationMode) === 'Free' ? 'LIBERADA' : 'BLOQUEADA';
+      const source = mode ? 'override' : 'padrão da portaria';
+      setMessage(`Modo alterado para ${modeLabel} (${source}). Catraca receberá novo comando no próximo keepalive.`);
+      onModeChanged();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao atualizar modo.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const gateMode = device?.operationMode ?? 'Active';
+  const effectiveMode = selectedMode ?? gateMode;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content mode-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <h3>Modo da Catraca</h3>
+            <small>{turnstile.deviceName || turnstile.deviceId}</small>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {device ? (
+            <>
+              <div className="mode-info">
+                <div className="info-row">
+                  <span className="info-label">Portaria:</span>
+                  <strong>{device.gateName}</strong>
+                </div>
+                <div className="info-row">
+                  <span className="info-label">Padrão (Gate):</span>
+                  <span className={`mode-badge mode-${gateMode.toLowerCase()}`}>
+                    {gateMode === 'Active' ? '📖' : gateMode === 'Free' ? '🟢' : '🔴'} {gateMode === 'Active' ? 'ATIVA' : gateMode === 'Free' ? 'LIBERADA' : 'BLOQUEADA'}
+                  </span>
+                </div>
+                <div className="info-row">
+                  <span className="info-label">Modo Efetivo:</span>
+                  <span className={`mode-badge mode-${effectiveMode.toLowerCase()} effective`}>
+                    {effectiveMode === 'Active' ? '📖' : effectiveMode === 'Free' ? '🟢' : '🔴'} {effectiveMode === 'Active' ? 'ATIVA' : effectiveMode === 'Free' ? 'LIBERADA' : 'BLOQUEADA'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mode-controls">
+                <p className="control-label">Escolha um override:</p>
+                <div className="mode-buttons-vertical">
+                  <button
+                    className={`mode-button-full ${selectedMode === 'Active' ? 'selected' : ''} ${saving ? 'disabled' : ''}`}
+                    onClick={() => handleSetMode('Active')}
+                    disabled={saving}
+                    title="Catraca lê ingresso"
+                  >
+                    <span className="mode-icon">📖</span>
+                    <span className="mode-name">ATIVA</span>
+                    <small>Aguarda leitura de ingresso</small>
+                  </button>
+                  <button
+                    className={`mode-button-full ${selectedMode === 'Free' ? 'selected' : ''} ${saving ? 'disabled' : ''}`}
+                    onClick={() => handleSetMode('Free')}
+                    disabled={saving}
+                    title="Catraca gira livremente"
+                  >
+                    <span className="mode-icon">🟢</span>
+                    <span className="mode-name">LIBERADA</span>
+                    <small>Gira livremente para ambos os lados</small>
+                  </button>
+                  <button
+                    className={`mode-button-full ${selectedMode === 'Blocked' ? 'selected' : ''} ${saving ? 'disabled' : ''}`}
+                    onClick={() => handleSetMode('Blocked')}
+                    disabled={saving}
+                    title="Catraca não gira"
+                  >
+                    <span className="mode-icon">🔴</span>
+                    <span className="mode-name">BLOQUEADA</span>
+                    <small>Não gira para nenhum lado</small>
+                  </button>
+                  {selectedMode && (
+                    <button
+                      className="mode-button-full remove-button"
+                      onClick={() => handleSetMode(null)}
+                      disabled={saving}
+                      title="Voltar a herdar o padrão da portaria"
+                    >
+                      <span className="mode-icon">⟲</span>
+                      <span className="mode-name">REMOVER OVERRIDE</span>
+                      <small>Herdar modo da portaria</small>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {error && <div className="alert-error"><small>{error}</small></div>}
+              {message && <div className="alert-success"><small>{message}</small></div>}
+            </>
+          ) : (
+            <EmptyState message="Catraca não encontrada ou sem atribuição." />
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button className="secondary-button" onClick={onClose} disabled={saving}>Fechar</button>
         </div>
       </div>
     </div>

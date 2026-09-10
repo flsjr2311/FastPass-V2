@@ -90,6 +90,7 @@ export interface GateView {
   code?: string | null;
   active: boolean;
   operationMode: GateOperationMode;
+  turnstileMode?: string | null; // 'Active' | 'Free' | 'Blocked'
 }
 
 export type DeviceType = 'Legacy' | 'Serial' | 'Vcom' | 'Mqtt' | 'Simulator';
@@ -106,6 +107,8 @@ export interface DeviceView {
   active: boolean;
   lastSeenAt?: string | null;
   configurationJson?: string | null;
+  operationMode?: string | null; // Gate mode (inherited)
+  operationModeOverride?: string | null; // Device override ('Active' | 'Free' | 'Blocked')
 }
 
 export interface SectorView {
