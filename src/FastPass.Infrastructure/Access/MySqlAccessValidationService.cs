@@ -331,6 +331,11 @@ public sealed class MySqlAccessValidationService : IAccessValidationService
         {
             reason = "Ingresso inativo.";
         }
+        // Quota geral do ingresso atingida
+        else if (ticket.Uses >= ticket.MaximumUses)
+        {
+            reason = "Ingresso atingiu o limite de utilizações.";
+        }
         // Ingresso já utilizado: é uma tentativa de ENTRADA mas não há entradas restantes.
         // Verificado ANTES do setor para dar a mensagem correta ("já utilizado") em vez de
         // "portaria sem autorização" quando o ticket é relido numa portaria de entrada.

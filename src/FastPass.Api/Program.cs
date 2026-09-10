@@ -13,6 +13,8 @@ using FastPass.Infrastructure.Database;
 using FastPass.Infrastructure.Import;
 using FastPass.Application.Reports;
 using FastPass.Infrastructure.Reports;
+using FastPass.Worker.Mqtt;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,6 +36,10 @@ builder.Services.AddSingleton<ITurnstileMonitoringService, MySqlTurnstileMonitor
 builder.Services.AddScoped<ITicketImportService, MySqlTicketImportService>();
 builder.Services.AddSingleton<IValidationReportService, MySqlValidationReportService>();
 builder.Services.AddSingleton<IAuditTrailService, MySqlAuditTrailService>();
+
+// ── MQTT + Worker de catracas ─────────────────────────────────────────────────
+builder.Services.Configure<MqttOptions>(builder.Configuration.GetSection("Mqtt"));
+builder.Services.AddHostedService<MqttTurnstileService>();
 
 builder.Services.AddCors(options =>
 {

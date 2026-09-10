@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\FastPass.Application\FastPass.Application.csproj" />
     <ProjectReference Include="..\FastPass.Infrastructure\FastPass.Infrastructure.csproj" />
+    <ProjectReference Include="..\FastPass.Worker\FastPass.Worker.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
