@@ -101,6 +101,35 @@ Config para ligar/desligar: `Mqtt:Enabled`. Requer fonte NuGet nuget.org (foi ad
 - Validado com a placa real: apareceu como online, firmware 1.0.35, ip 192.168.15.9, board neon025156;
   ao cadastrar como device Mqtt (identifier=`Catraca 151`) o painel passou a mostrar portaria/evento.
 
+## ✅ LEITURA DE QR CAPTURADA (04/09) — protocolo descoberto!
+Com `accmode:5`, a placa PUBLICA a leitura via MQTT. Capturado:
+
+**Tópico:** `FastPass/<DeviceId>/from/log/5/0`  (ex.: `FastPass/Catraca151/from/log/5/0`)
+Formato do tópico parece ser `.../from/log/<accmode>/<algo>`.
+
+**Payload (leitura de QR):**
+```json
+{"cmd":"log","timestamp":"260904173344","tz":-3,"accmode":5,"origin":5,
+ "search":"ref","uid":0,"ref":"7898483340453","event":42,"ol":"0"}
+```
+Campos:
+- `cmd":"log"` → evento de log/leitura
+- `ref` → **O CÓDIGO LIDO** (ex.: "7898483340453"). Campo principal.
+- `search":"ref"` → buscou por referência
+- `accmode":5` → modo de acesso que ATIVA a publicação das leituras (antes era 0/11, não publicava)
+- `origin":5` → origem da leitura
+- `uid":0` → id na lista local (0 = não encontrado localmente)
+- `event":42` → tipo de evento (a confirmar; provável "não encontrado/consulta")
+- `ol":"0"` → provável flag online
+
+Observações do `info` no momento: `media:"wireless"`, `iplocal:"192.168.15.7"`,
+`reader1active:0` (Wiegand off — QR entra pela UART), `accmode:"5"`.
+
+PENDENTE confirmar:
+- Como RESPONDER (liberar/negar) — tópico `to/...` e payload que a placa espera.
+- Significado exato de `event`, `origin`, `ol`, e do segundo número do tópico (`/5/0`).
+- Como o `accmode` foi para 5 (o usuário mudou algo — documentar).
+
 ## Descobertas sobre o modelo de operação da placa (IMPORTANTE)
 Investigação em 02/09 revelou que, com o firmware atual (1.0.35), a leitura de QR
 NÃO é encaminhada ao servidor por MQTT:
