@@ -107,6 +107,8 @@ public sealed class MySqlTurnstileMonitoringService : ITurnstileMonitoringServic
         // Cruza a presença (por device_id) com o cadastro (fp_devices.identifier),
         // trazendo portaria e — quando associada a um evento — o evento.
         // Prioriza o evento em andamento (Running) / mais recente, igual à resolução do Worker.
+        // Filtra catracas offline há mais de 24 horas (não aparecem na lista).
+        const int offlineThresholdSeconds = 86400; // 24 horas
         command.CommandText = """
             SELECT p.device_id, p.status, p.first_seen_at, p.last_seen_at,
                    (p.status <> 'disconnected'
@@ -119,9 +121,11 @@ public sealed class MySqlTurnstileMonitoringService : ITurnstileMonitoringServic
             LEFT JOIN fp_gates g ON g.id = d.gate_id
             LEFT JOIN fp_event_gates eg ON eg.gate_id = d.gate_id AND eg.active = 1
             LEFT JOIN fp_events e ON e.id = eg.event_id
+            WHERE p.last_seen_at >= (UTC_TIMESTAMP() - INTERVAL @offline_threshold SECOND)
             ORDER BY online DESC, p.last_seen_at DESC, p.device_id;
             """;
         command.Parameters.AddWithValue("@win", onlineWindowSeconds);
+        command.Parameters.AddWithValue("@offline_threshold", offlineThresholdSeconds);
 
         var result = new List<TurnstileMonitorView>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
