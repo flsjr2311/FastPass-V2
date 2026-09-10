@@ -1028,6 +1028,59 @@ function MessagesView({ eventId }: { eventId: string }) {
   </>;
 }
 
+function GateCatalogCard({ gate, devices, sectorsCount, selected, onSelect, onRemove, removing }: { gate: GateView; devices: DeviceView[]; sectorsCount: number; selected: boolean; onSelect: () => void; onRemove: () => void; removing: boolean }) {
+  const onlineDevices = devices.filter(d => d.active).length;
+  return (
+    <div className={`gate-catalog-card ${selected ? 'selected' : ''}`}>
+      <div className="card-header">
+        <h4>🚪 {gate.name}</h4>
+        <button type="button" className="card-remove-btn" disabled={removing} onClick={onRemove}>
+          {removing ? '...' : '✕'}
+        </button>
+      </div>
+      <div className="card-body">
+        {gate.code && <div className="card-badge">Código: <strong>{gate.code}</strong></div>}
+        <div className="card-mode">Modo: <strong>{gate.operationMode === 'EntryAndExitValidated' ? 'Entrada + Saída' : 'Entrada'}</strong></div>
+      </div>
+      <div className="card-stats">
+        <div className="stat">
+          <span className="stat-label">Catracas</span>
+          <span className="stat-value">{onlineDevices}</span>
+        </div>
+        <div className="stat">
+          <span className="stat-label">Setores</span>
+          <span className="stat-value">{sectorsCount}</span>
+        </div>
+      </div>
+      <button type="button" className={`card-select-btn ${selected ? 'active' : ''}`} onClick={onSelect}>
+        {selected ? '✓ Selecionada' : 'Selecionar'}
+      </button>
+    </div>
+  );
+}
+
+function SectorCatalogCard({ sector, gatesCount, onRemove, removing }: { sector: SectorView; gatesCount: number; onRemove: () => void; removing: boolean }) {
+  return (
+    <div className="sector-catalog-card">
+      <div className="card-header">
+        <h4>🎪 {sector.name}</h4>
+        <button type="button" className="card-remove-btn" disabled={removing} onClick={onRemove}>
+          {removing ? '...' : '✕'}
+        </button>
+      </div>
+      <div className="card-body">
+        {sector.capacity && <div className="card-capacity">Capacidade: <strong>{sector.capacity}</strong></div>}
+      </div>
+      <div className="card-stats">
+        <div className="stat">
+          <span className="stat-label">Portarias</span>
+          <span className="stat-value">{gatesCount}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfigurationView({ eventId }: { eventId: string }) {
   const [gates, setGates] = useState<GateView[]>([]);
   const [devices, setDevices] = useState<DeviceView[]>([]);
@@ -1272,16 +1325,52 @@ function ConfigurationView({ eventId }: { eventId: string }) {
     <section className="panel config-intro"><div><p className="panel-kicker">TOPOLOGIA DE ACESSO</p><h2>Portarias × setores</h2><p className="panel-subtitle">Defina por qual portaria cada setor pode ser acessado em cada direção.</p></div><div className="config-counts"><strong>{gates.length}</strong><span>portarias</span><strong>{sectors.length}</strong><span>setores</span></div></section>
     {error && <div className="alert-error"><strong>Não foi possível atualizar a configuração.</strong><span>{error}</span></div>}
     {message && <div className="alert-success"><strong>{message}</strong></div>}
+    {(() => {
+      const gatesWithoutSectors = gates.filter(g => !rules.some(r => r.gateId === g.id && r.direction === 'Entry'));
+      const sectorsWithoutGates = sectors.filter(s => !rules.some(r => r.sectorId === s.id && r.direction === 'Entry'));
+      const unassignedOnlineTurnstiles = []; // Will be populated from TurnstilesView state if needed
+      const hasAlerts = gatesWithoutSectors.length > 0 || sectorsWithoutGates.length > 0 || unassignedOnlineTurnstiles.length > 0;
+      
+      return hasAlerts ? <section className="alerts-section">
+        {gatesWithoutSectors.length > 0 && (
+          <div className="alert-warning">
+            <span className="alert-icon">⚠️</span>
+            <div className="alert-content">
+              <strong>{gatesWithoutSectors.length} portaria(s) sem setor associado</strong>
+              <p>{gatesWithoutSectors.map(g => g.name).join(', ')}</p>
+            </div>
+          </div>
+        )}
+        {sectorsWithoutGates.length > 0 && (
+          <div className="alert-warning">
+            <span className="alert-icon">⚠️</span>
+            <div className="alert-content">
+              <strong>{sectorsWithoutGates.length} setor(es) sem portaria conectada</strong>
+              <p>{sectorsWithoutGates.map(s => s.name).join(', ')}</p>
+            </div>
+          </div>
+        )}
+      </section> : null;
+    })()}
     <section className="config-catalog-grid">
       <article className="panel config-mini-panel">
         <div className="panel-heading"><div><p className="panel-kicker">CATÁLOGO DE PORTARIAS</p><h2>Cadastrar portaria</h2><p className="panel-subtitle">As portarias já cadastradas aparecem abaixo.</p></div><span className="catalog-count">{gates.length}</span></div>
         <form className="config-form config-mini-form" onSubmit={handleCreateGate}><label>Nome<input value={gateName} onChange={(event) => setGateName(event.target.value)} placeholder="Ex.: Portaria Norte" disabled={catalogSaving} /></label><label>Código opcional<input value={gateCode} onChange={(event) => setGateCode(event.target.value)} placeholder="Ex.: PN-01" disabled={catalogSaving} /></label><button className="secondary-button form-submit" type="submit" disabled={catalogSaving}>{catalogSaving ? 'Salvando...' : 'Cadastrar portaria'}</button></form>
-        <div className="catalog-items" aria-label="Portarias cadastradas">{gates.length === 0 ? <p className="catalog-empty">Nenhuma portaria cadastrada.</p> : gates.map((gate) => <div className={selectedGateId === gate.id ? 'catalog-item selected' : 'catalog-item'} key={gate.id}><button type="button" className="catalog-item-main" onClick={() => setSelectedGateId(gate.id)}><span><strong>{gate.name}</strong><small>{gate.code || 'Sem código'}</small></span>{selectedGateId === gate.id && <em>Selecionada</em>}</button><button type="button" className="catalog-remove" disabled={removingKey === `gate:${gate.id}`} onClick={() => handleRemoveGate(gate)}>{removingKey === `gate:${gate.id}` ? 'Removendo...' : 'Remover'}</button></div>)}</div>
+        <div className="catalog-items gates-grid" aria-label="Portarias cadastradas">{gates.length === 0 ? <p className="catalog-empty">Nenhuma portaria cadastrada.</p> : gates.map((gate) => {
+          const gateDevices = devices.filter(d => d.gateId === gate.id);
+          const gateSectors = rules.filter(r => r.gateId === gate.id && r.direction === 'Entry').map(r => r.sectorId);
+          const uniqueSectors = [...new Set(gateSectors)].length;
+          return <GateCatalogCard key={gate.id} gate={gate} devices={gateDevices} sectorsCount={uniqueSectors} selected={selectedGateId === gate.id} onSelect={() => setSelectedGateId(gate.id)} onRemove={() => handleRemoveGate(gate)} removing={removingKey === `gate:${gate.id}`} />;
+        })}</div>
       </article>
       <article className="panel config-mini-panel">
         <div className="panel-heading"><div><p className="panel-kicker">CATÁLOGO DE SETORES</p><h2>Cadastrar setor</h2><p className="panel-subtitle">Os setores já cadastrados aparecem abaixo.</p></div><span className="catalog-count">{sectors.length}</span></div>
         <form className="config-form config-mini-form" onSubmit={handleCreateSector}><label>Nome<input value={sectorName} onChange={(event) => setSectorName(event.target.value)} placeholder="Ex.: Pista premium" disabled={catalogSaving} /></label><label>Capacidade opcional<input type="number" min="1" value={sectorCapacity} onChange={(event) => setSectorCapacity(event.target.value)} placeholder="Ex.: 500" disabled={catalogSaving} /></label><button className="secondary-button form-submit" type="submit" disabled={catalogSaving}>{catalogSaving ? 'Salvando...' : 'Cadastrar setor'}</button></form>
-        <div className="catalog-items" aria-label="Setores cadastrados">{sectors.length === 0 ? <p className="catalog-empty">Nenhum setor cadastrado.</p> : sectors.map((sector) => <div className="catalog-item" key={sector.id}><div className="catalog-item-main"><span><strong>{sector.name}</strong><small>{sector.capacity ? `Capacidade ${sector.capacity}` : 'Capacidade não informada'}</small></span></div><button type="button" className="catalog-remove" disabled={removingKey === `sector:${sector.id}`} onClick={() => handleRemoveSector(sector)}>{removingKey === `sector:${sector.id}` ? 'Removendo...' : 'Remover'}</button></div>)}</div>
+        <div className="catalog-items sectors-grid" aria-label="Setores cadastrados">{sectors.length === 0 ? <p className="catalog-empty">Nenhum setor cadastrado.</p> : sectors.map((sector) => {
+          const sectorGates = rules.filter(r => r.sectorId === sector.id && r.direction === 'Entry').map(r => r.gateId);
+          const uniqueGates = [...new Set(sectorGates)].length;
+          return <SectorCatalogCard key={sector.id} sector={sector} gatesCount={uniqueGates} onRemove={() => handleRemoveSector(sector)} removing={removingKey === `sector:${sector.id}`} />;
+        })}</div>
       </article>
     </section>
     <section className="panel config-devices-panel"><div className="panel-heading"><div><p className="panel-kicker">DISPOSITIVOS</p><h2>Dispositivos das portarias</h2><p className="panel-subtitle">Cadastre simuladores agora e configure os dispositivos físicos quando estiverem disponíveis. Nenhuma conexão de hardware é iniciada por esta tela.</p></div><div className="config-counts"><strong>{devices.length}</strong><span>dispositivos</span></div></div><form className="config-form" onSubmit={handleCreateDevice}><label>Portaria<select value={selectedGateId} onChange={(event) => setSelectedGateId(event.target.value)} disabled={deviceSavingKey === 'new' || gates.length === 0}><option value="">Selecione</option>{gates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}{gate.code ? ` · ${gate.code}` : ''}</option>)}</select></label><label>Nome<input value={deviceName} onChange={(event) => setDeviceName(event.target.value)} placeholder="Ex.: Catraca Norte 01" disabled={deviceSavingKey === 'new'} /></label><label>Identifier opcional<input value={deviceIdentifier} onChange={(event) => setDeviceIdentifier(event.target.value)} placeholder="Ex.: catraca-norte-01" disabled={deviceSavingKey === 'new'} /></label><label>Tipo<select value={deviceType} onChange={(event) => setDeviceType(event.target.value as DeviceType)} disabled={deviceSavingKey === 'new'}><option value="Simulator">Simulator</option><option value="Serial">Serial</option><option value="Vcom">Vcom</option><option value="Mqtt">Mqtt</option><option value="Legacy">Legacy</option></select></label><label>Configuration JSON opcional<textarea rows={2} value={deviceConfiguration} onChange={(event) => setDeviceConfiguration(event.target.value)} placeholder='{"port":"COM3"}' disabled={deviceSavingKey === 'new'} /></label><button className="secondary-button form-submit" type="submit" disabled={deviceSavingKey === 'new' || !selectedGateId}>{deviceSavingKey === 'new' ? 'Cadastrando...' : 'Cadastrar dispositivo'}</button></form>{gates.length === 0 ? <EmptyState message="Crie uma portaria antes de cadastrar dispositivos." /> : devices.length === 0 ? <EmptyState message="Nenhum dispositivo cadastrado neste evento." /> : <div className="table-scroll"><table><thead><tr><th>Dispositivo</th><th>Identifier</th><th>Tipo</th><th>Configuration JSON</th><th>Último contato</th><th>Estado</th><th /></tr></thead><tbody>{devices.filter((device) => device.gateId === selectedGateId).map((device) => <DeviceRow key={device.id} device={device} saving={deviceSavingKey === device.id} onSave={handleUpdateDevice} />)}</tbody></table></div>}</section>
@@ -1303,6 +1392,8 @@ function TurnstilesView() {
   const [items, setItems] = useState<TurnstileMonitorView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTurnstile, setModalTurnstile] = useState<TurnstileMonitorView | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -1322,35 +1413,38 @@ function TurnstilesView() {
   const online = items?.filter((t) => t.online).length ?? 0;
   const unassigned = items?.filter((t) => !t.deviceRegistrationId).length ?? 0;
 
-  return <section className="panel full-panel">
-    <div className="panel-heading">
-      <div>
-        <p className="panel-kicker">MONITORAMENTO</p>
-        <h2>Catracas</h2>
-        <p className="panel-subtitle">
-          {items ? `${items.length} catraca(s) · ${online} online · ${unassigned} sem atribuição` : 'Placas identificadas via MQTT.'}
-          {refreshedAt && ` · atualizado ${formatDate(refreshedAt.toISOString(), true)}`}
-        </p>
+  return <>
+    <section className="panel full-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="panel-kicker">MONITORAMENTO</p>
+          <h2>Catracas</h2>
+          <p className="panel-subtitle">
+            {items ? `${items.length} catraca(s) · ${online} online · ${unassigned} sem atribuição` : 'Placas identificadas via MQTT.'}
+            {refreshedAt && ` · atualizado ${formatDate(refreshedAt.toISOString(), true)}`}
+          </p>
+        </div>
       </div>
-    </div>
-    {error && <div className="alert-error"><span>{error}</span></div>}
-    {items === null
-      ? <div className="table-loading"><span className="spinner" />Carregando...</div>
-      : items.length === 0
-        ? <EmptyState message="Nenhuma catraca se conectou ainda. Aponte a placa para o broker MQTT." />
-        : <div className="turnstile-grid">
-            {items.map((t) => <TurnstileCard key={t.deviceId} t={t} />)}
-          </div>}
-  </section>;
+      {error && <div className="alert-error"><span>{error}</span></div>}
+      {items === null
+        ? <div className="table-loading"><span className="spinner" />Carregando...</div>
+        : items.length === 0
+          ? <EmptyState message="Nenhuma catraca se conectou ainda. Aponte a placa para o broker MQTT." />
+          : <div className="turnstile-grid">
+              {items.map((t) => <TurnstileCard key={t.deviceId} t={t} onAssignClick={() => { setModalTurnstile(t); setModalOpen(true); }} />)}
+            </div>}
+    </section>
+    {modalOpen && modalTurnstile && <TurnstileAssignmentModal turnstile={modalTurnstile} onClose={() => { setModalOpen(false); setModalTurnstile(null); }} />}
+  </>;
 }
 
-function TurnstileCard({ t }: { t: TurnstileMonitorView }) {
+function TurnstileCard({ t, onAssignClick }: { t: TurnstileMonitorView; onAssignClick: () => void }) {
   const assigned = Boolean(t.deviceRegistrationId && t.gateId);
   return <article className={`turnstile-card ${t.online ? '' : 'offline'}`}>
     <div className="turnstile-head">
       <span className="turnstile-name">{t.deviceName || t.deviceId}</span>
       <span className={`turnstile-live ${t.online ? 'on' : 'off'}`}>
-        <span className="dot" />{t.online ? 'Online' : 'Offline'}
+        <span className="dot" />{t.online ? '🟢 Online' : '🔴 Offline'}
       </span>
     </div>
     <div className="turnstile-meta">
@@ -1362,10 +1456,107 @@ function TurnstileCard({ t }: { t: TurnstileMonitorView }) {
     </div>
     <div className="turnstile-assign">
       {assigned
-        ? <span className="assigned">Atribuída a <strong>{t.gateName}</strong>{t.eventName ? <> · evento <strong>{t.eventName}</strong></> : ''}{t.deviceActive === false ? ' · (cadastro inativo)' : ''}</span>
-        : <span className="unassigned">⚠ Não atribuída a nenhuma portaria</span>}
+        ? <span className="assigned">✅ Atribuída a <strong>{t.gateName}</strong>{t.eventName ? <> · evento <strong>{t.eventName}</strong></> : ''}{t.deviceActive === false ? ' · (inativa)' : ''}</span>
+        : <span className="unassigned">⚠️ Sem atribuição</span>}
     </div>
+    {!assigned && t.online && (
+      <button className="primary-button" style={{ width: '100%', marginTop: 8 }} onClick={onAssignClick}>
+        Atribuir agora
+      </button>
+    )}
   </article>;
+}
+
+function TurnstileAssignmentModal({ turnstile, onClose }: { turnstile: TurnstileMonitorView; onClose: () => void }) {
+  const [events, setEvents] = useState<EventView[]>([]);
+  const [gates, setGates] = useState<GateView[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState('');
+  const [selectedGateId, setSelectedGateId] = useState('');
+  const [deviceName, setDeviceName] = useState(`Catraca ${turnstile.deviceId}`);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listEvents().then(setEvents).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedEventId) { setGates([]); return; }
+    api.listGates(selectedEventId).then(setGates).catch(() => {});
+  }, [selectedEventId]);
+
+  async function handleAssign() {
+    if (!selectedEventId || !selectedGateId || !deviceName.trim()) {
+      setError('Preencha todos os campos.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.createDevice(selectedEventId, selectedGateId, {
+        name: deviceName.trim(),
+        identifier: turnstile.deviceId,
+        deviceType: 'Mqtt',
+        configurationJson: undefined,
+      });
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao atribuir catraca.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Atribuir Catraca</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label>ID MQTT</label>
+            <input type="text" value={turnstile.deviceId} disabled style={{ background: '#f0f0f0' }} />
+            {turnstile.firmware && <small style={{ color: '#999' }}>Firmware: {turnstile.firmware}</small>}
+            {turnstile.ipLocal && <small style={{ color: '#999' }}>IP: {turnstile.ipLocal}</small>}
+          </div>
+
+          <div className="form-group">
+            <label>Evento *</label>
+            <select value={selectedEventId} onChange={(e) => { setSelectedEventId(e.target.value); setSelectedGateId(''); }} disabled={saving}>
+              <option value="">Selecione um evento...</option>
+              {events.map((evt) => <option key={evt.id} value={evt.id}>{evt.name}</option>)}
+            </select>
+          </div>
+
+          {selectedEventId && (
+            <div className="form-group">
+              <label>Portaria *</label>
+              <select value={selectedGateId} onChange={(e) => setSelectedGateId(e.target.value)} disabled={saving}>
+                <option value="">Selecione uma portaria...</option>
+                {gates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}{gate.code ? ` (${gate.code})` : ''}</option>)}
+              </select>
+            </div>
+          )}
+
+          <div className="form-group">
+            <label>Nome da Catraca *</label>
+            <input type="text" value={deviceName} onChange={(e) => setDeviceName(e.target.value)} placeholder="Ex.: Catraca Camarote" disabled={saving} />
+          </div>
+
+          {error && <div className="alert-error"><small>{error}</small></div>}
+        </div>
+
+        <div className="modal-footer">
+          <button className="secondary-button" onClick={onClose} disabled={saving}>Cancelar</button>
+          <button className="primary-button" onClick={handleAssign} disabled={saving || !selectedEventId || !selectedGateId}>
+            {saving ? 'Atribuindo...' : 'Atribuir'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Rótulo legível e tom visual para o desfecho de um login. */
