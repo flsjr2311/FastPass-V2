@@ -125,6 +125,24 @@ td[colspan] { white-space: normal; }
 @media (max-width: 900px) { .message-form-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 720px) { .message-card { padding: 17px; }.message-form-grid { grid-template-columns: 1fr; }.message-form-grid label:nth-child(1), .message-form-grid label:nth-child(2) { grid-column: auto; }.message-card-actions { align-items: stretch; flex-direction: column; }.message-preview { align-items: stretch; flex-direction: column; }.message-preview span { max-width: 100%; } }
 
+/* Templates de mensagens para catracas (Neon 1.3 — MQTT) */
+.turnstile-template-card { min-width: 0; padding: 22px 24px; border: 1px solid #e7ebf2; border-radius: 11px; background: #fff; box-shadow: 0 3px 12px #15264a04; }
+.turnstile-template-card .card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.turnstile-template-card code { display: block; color: #5875db; font-size: 12px; font-weight: 800; }
+.turnstile-template-card .message-badge { display: inline-flex; align-items: center; margin-top: 6px; padding: 3px 9px; border-radius: 20px; font-size: 10px; font-weight: 700; color: #5b72c9; background: #f0f3ff; }
+.turnstile-preview { display: flex; flex-direction: column; gap: 12px; margin: 18px 0 22px; padding: 16px; background: #f8f9fd; border-radius: 9px; }
+.preview-title { color: #8793a5; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.preview-screen { display: flex; flex-direction: column; gap: 6px; padding: 12px; background: #0d1b2d; border-radius: 6px; font-family: monospace; color: #00e6ff; }
+.preview-line { min-height: 18px; font-size: 14px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
+.turnstile-template-card .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 18px; }
+.turnstile-template-card .form-grid label { display: grid; gap: 6px; color: #718096; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+.turnstile-template-card input { width: 100%; min-height: 36px; padding: 8px 10px; color: #3d4d67; border: 1px solid #dfe5ee; border-radius: 7px; outline: none; background: #fff; font: 500 11px 'DM Sans', sans-serif; text-transform: uppercase; }
+.turnstile-template-card input::placeholder { text-transform: uppercase; }
+.char-warning { display: block; margin-top: 4px; color: #e66c7d; font-size: 9px; font-weight: 600; }
+.turnstile-template-card .card-actions { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.turnstile-template-card .card-actions small { color: #96a2b2; font-size: 10px; }
+@media (max-width: 720px) { .turnstile-template-card { padding: 17px; }.turnstile-template-card .form-grid { grid-template-columns: 1fr; }.turnstile-template-card .card-actions { flex-direction: column; align-items: stretch; } }
+
 /* Tela de login */
 .login-shell { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #101b2d; }
 .login-card { width: 100%; max-width: 400px; padding: 40px 36px; border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgba(0,0,0,.3); display: flex; flex-direction: column; gap: 14px; }

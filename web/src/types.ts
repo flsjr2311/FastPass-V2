@@ -191,6 +191,15 @@ export interface AccessMessageTemplateView {
   updatedAt: string;
 }
 
+/** Template de mensagem para catraca (Neon 1.3): monochrome, 2 linhas × 16 chars. */
+export interface TurnstileMessageTemplateView {
+  templateId: number;
+  line1: string;
+  line2: string;
+  active: boolean;
+  updatedAt: string;
+}
+
 export interface AccessValidationResult {
   attemptId: string;
   approved: boolean;

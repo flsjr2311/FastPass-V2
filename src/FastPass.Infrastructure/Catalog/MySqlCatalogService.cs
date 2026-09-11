@@ -1292,6 +1292,71 @@ public sealed class MySqlCatalogService : ICatalogService
         return (await ListDevicesAsync(eventId, gateId, false, cancellationToken)).Single(item => item.Id == deviceId);
     }
 
+    public async Task<bool> RemoveDeviceAsync(
+        Guid eventId,
+        Guid gateId,
+        Guid deviceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (deviceId == Guid.Empty)
+        {
+            throw new ArgumentException("DeviceId é obrigatório.");
+        }
+
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            // Verifica se device existe e pertence ao gate/evento
+            var exists = await ExistsAsync(
+                    connection,
+                    transaction,
+                    """
+                    SELECT COUNT(*)
+                    FROM fp_devices d
+                    INNER JOIN fp_event_gates eg
+                        ON eg.gate_id = d.gate_id
+                       AND eg.event_id = @event_id
+                    WHERE d.id = @device_id
+                      AND d.gate_id = @gate_id
+                      AND eg.active = 1;
+                    """,
+                    cancellationToken,
+                    ("@event_id", eventId.ToString()),
+                    ("@gate_id", gateId.ToString()),
+                    ("@device_id", deviceId.ToString()));
+
+            if (!exists)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+
+            // Delete device
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                DELETE FROM fp_devices
+                WHERE id = @device_id
+                  AND gate_id = @gate_id;
+                """;
+            cmd.Parameters.AddWithValue("@device_id", deviceId.ToString());
+            cmd.Parameters.AddWithValue("@gate_id", gateId.ToString());
+            
+            var rowsAffected = await cmd.ExecuteNonQueryAsync(cancellationToken);
+            
+            await transaction.CommitAsync(cancellationToken);
+            return rowsAffected > 0;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     public async Task<TurnstileDeviceResolution?> ResolveTurnstileDeviceAsync(
         string identifier,
         CancellationToken cancellationToken = default)

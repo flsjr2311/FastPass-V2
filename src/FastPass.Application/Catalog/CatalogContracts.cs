@@ -336,6 +336,12 @@ public interface ICatalogService
         SetDeviceOperationModeCommand command,
         CancellationToken cancellationToken = default);
 
+    Task<bool> RemoveDeviceAsync(
+        Guid eventId,
+        Guid gateId,
+        Guid deviceId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Resolve um dispositivo pelo identifier (o "nome" que a catraca envia via MQTT),
     /// trazendo portaria e evento vinculados. Retorna null se não houver device ativo

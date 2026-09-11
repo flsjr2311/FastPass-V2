@@ -937,13 +937,91 @@ function MessageTemplateEditor({ item, saving, onSave }: { item: AccessMessageTe
   </article>;
 }
 
+function TurnstileTemplateEditor({ item, saving, onSave }: { item: TurnstileMessageTemplateView; saving: boolean; onSave: (templateId: number, line1: string, line2: string, active: boolean) => void }) {
+  const [line1, setLine1] = useState(item.line1);
+  const [line2, setLine2] = useState(item.line2);
+  const [active, setActive] = useState(item.active);
+
+  useEffect(() => {
+    setLine1(item.line1); setLine2(item.line2); setActive(item.active);
+  }, [item]);
+
+  const templateId = item.templateId.toString().padStart(2, '0');
+  const line1Remaining = 16 - line1.length;
+  const line2Remaining = 16 - line2.length;
+  const isValid = line1.length > 0 && line1.length <= 16 && line2.length > 0 && line2.length <= 16;
+
+  return <article className="turnstile-template-card">
+    <div className="card-heading">
+      <div>
+        <code>ID {templateId}</code>
+        <span className="message-badge default">Display monocromático · 2 linhas × 16 caracteres</span>
+      </div>
+      <label className="form-checkbox">
+        <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} disabled={saving} />
+        <span className="checkbox-box">✓</span>
+        {active ? 'Ativa' : 'Inativa'}
+      </label>
+    </div>
+
+    <div className="turnstile-preview">
+      <div className="preview-title">Display da Catraca</div>
+      <div className="preview-screen">
+        <div className="preview-line">{line1 || '·'}</div>
+        <div className="preview-line">{line2 || '·'}</div>
+      </div>
+    </div>
+
+    <div className="form-grid">
+      <label>
+        Linha 1 ({line1.length}/16)
+        <input 
+          value={line1} 
+          maxLength={16} 
+          onChange={(e) => setLine1(e.target.value.toUpperCase())} 
+          disabled={saving}
+          placeholder="ACESSO"
+        />
+        {line1Remaining < 4 && <small className="char-warning">{line1Remaining} caracteres restantes</small>}
+      </label>
+      
+      <label>
+        Linha 2 ({line2.length}/16)
+        <input 
+          value={line2} 
+          maxLength={16} 
+          onChange={(e) => setLine2(e.target.value.toUpperCase())} 
+          disabled={saving}
+          placeholder="LIBERADO"
+        />
+        {line2Remaining < 4 && <small className="char-warning">{line2Remaining} caracteres restantes</small>}
+      </label>
+    </div>
+
+    <div className="card-actions">
+      <small>Máximo 16 caracteres por linha. Usado em catracas com display monocromático via MQTT (Neon 1.3).</small>
+      <button 
+        className="secondary-button" 
+        type="button" 
+        disabled={saving || !isValid} 
+        onClick={() => onSave(item.templateId, line1.trim(), line2.trim(), active)}
+      >
+        {saving ? 'Salvando...' : 'Salvar template'}
+      </button>
+    </div>
+  </article>;
+}
+
 function MessagesView({ eventId }: { eventId: string }) {
-  const [tab, setTab] = useState<'event' | 'global'>('event');
+  const [tab, setTab] = useState<'event' | 'global' | 'turnstile'>('event');
   const [messages, setMessages] = useState<AccessMessageView[]>([]);
   const [templates, setTemplates] = useState<AccessMessageTemplateView[]>([]);
+  const [turnstileTemplates, setTurnstileTemplates] = useState<TurnstileMessageTemplateView[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [loadingTurnstile, setLoadingTurnstile] = useState(false);
   const [savingCode, setSavingCode] = useState<string | null>(null);
+  const [savingTurnstileId, setSavingTurnstileId] = useState<number | null>(null);
   const [restoringCode, setRestoringCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -961,6 +1039,14 @@ function MessagesView({ eventId }: { eventId: string }) {
     let cancelled = false;
     setLoadingTemplates(true); setError(null); setNotice(null);
     api.listMessageTemplates().then((result) => { if (!cancelled) setTemplates(result); }).catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os padrões globais.'); }).finally(() => { if (!cancelled) setLoadingTemplates(false); });
+    return () => { cancelled = true; };
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== 'turnstile') return;
+    let cancelled = false;
+    setLoadingTurnstile(true); setError(null); setNotice(null);
+    api.listTurnstileTemplates().then((result) => { if (!cancelled) setTurnstileTemplates(result); }).catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os templates de catraca.'); }).finally(() => { if (!cancelled) setLoadingTurnstile(false); });
     return () => { cancelled = true; };
   }, [tab]);
 
@@ -999,17 +1085,31 @@ function MessagesView({ eventId }: { eventId: string }) {
     } finally { setSavingCode(null); }
   }
 
+  async function handleSaveTurnstileTemplate(templateId: number, line1: string, line2: string, active: boolean) {
+    setSavingTurnstileId(templateId); setError(null); setNotice(null);
+    try {
+      const updated = await api.updateTurnstileTemplate(templateId, { line1, line2, active });
+      setTurnstileTemplates((current) => current.map((item) => item.templateId === updated.templateId ? updated : item));
+      setNotice(`Template de catraca ${templateId.toString().padStart(2, '0')} atualizado.`);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o template.');
+    } finally { setSavingTurnstileId(null); }
+  }
+
   const customizedCount = messages.filter(m => m.isCustomized).length;
 
   return <>
-    <section className="panel config-intro"><div><p className="panel-kicker">ADMINISTRAÇÃO</p><h2>Mensagens de validação</h2><p className="panel-subtitle">O padrão vale para todos os eventos automaticamente. Customize apenas quando um evento específico precisar de um texto diferente.</p></div></section>
+    <section className="panel config-intro"><div><p className="panel-kicker">ADMINISTRAÇÃO</p><h2>Mensagens de validação e catracas</h2><p className="panel-subtitle">Configure mensagens exibidas em validações de acesso (entrada/saída) e nos displays das catracas (2 linhas × 16 chars).</p></div></section>
 
     <div className="users-tabs">
       <button className={tab === 'event' ? 'users-tab active' : 'users-tab'} onClick={() => setTab('event')}>
-        Este evento {messages.length > 0 && <span className="users-tab-count">{customizedCount} customizada(s)</span>}
+        Evento {messages.length > 0 && <span className="users-tab-count">{customizedCount} customizada(s)</span>}
       </button>
       <button className={tab === 'global' ? 'users-tab active' : 'users-tab'} onClick={() => setTab('global')}>
         Padrões globais <span className="users-tab-count">{templates.length || 14}</span>
+      </button>
+      <button className={tab === 'turnstile' ? 'users-tab active' : 'users-tab'} onClick={() => setTab('turnstile')}>
+        Catracas <span className="users-tab-count">{turnstileTemplates.length || 31}</span>
       </button>
     </div>
     {error && <div className="alert-error"><strong>Não foi possível concluir.</strong><span>{error}</span></div>}
@@ -1024,6 +1124,11 @@ function MessagesView({ eventId }: { eventId: string }) {
     {tab === 'global' && (
       loadingTemplates ? <section className="panel full-panel"><div className="table-loading"><span className="spinner" />Carregando padrões...</div></section>
       : <div className="messages-list">{templates.map((item) => <MessageTemplateEditor key={item.code} item={item} saving={savingCode === item.code} onSave={handleSaveTemplate} />)}</div>
+    )}
+
+    {tab === 'turnstile' && (
+      loadingTurnstile ? <section className="panel full-panel"><div className="table-loading"><span className="spinner" />Carregando templates de catraca...</div></section>
+      : <div className="messages-list">{turnstileTemplates.map((item) => <TurnstileTemplateEditor key={item.templateId} item={item} saving={savingTurnstileId === item.templateId} onSave={handleSaveTurnstileTemplate} />)}</div>
     )}
   </>;
 }

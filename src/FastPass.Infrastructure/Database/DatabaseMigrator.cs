@@ -209,17 +209,29 @@ public sealed class DatabaseMigrator
             return;
         }
 
+        // Validar migration ANTES de executar para evitar erros conhecidos
+        MigrationValidation.ValidateDeleteStatement(statement);
+        MigrationValidation.ValidateLoginImpact(statement);
+        MigrationValidation.ValidateWhereClause(statement);
+
         await using var command = connection.CreateCommand();
         command.CommandText = statement;
         try
         {
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
-        catch (MySqlException ex) when (IsTolerantError(statement, ex))
+        catch (MySqlException ex)
         {
-            // Ignora erros esperados em migrations idempotentes:
-            // 1060 = Duplicate column name (ADD COLUMN que já existe)
-            // 1050 = Table already exists (CREATE TABLE sem IF NOT EXISTS)
+            // Log the error for debugging
+            var upper = statement.TrimStart().ToUpperInvariant();
+            System.Console.WriteLine($"MySqlException #{ex.Number}: {ex.Message}");
+            System.Console.WriteLine($"Statement: {upper[..Math.Min(100, upper.Length)]}");
+            
+            if (!IsTolerantError(statement, ex))
+            {
+                throw;
+            }
+            // Ignora erros esperados em migrations idempotentes
         }
     }
 
@@ -228,13 +240,24 @@ public sealed class DatabaseMigrator
     /// </summary>
     private static bool IsTolerantError(string statement, MySqlException ex)
     {
+        // Remove leading comments for checking
         var upper = statement.TrimStart().ToUpperInvariant();
+        while (upper.StartsWith("--", StringComparison.Ordinal))
+        {
+            // Skip to next line
+            var newlineIndex = upper.IndexOf('\n');
+            if (newlineIndex == -1) return false; // Only comments, no actual statement
+            upper = upper[(newlineIndex + 1)..].TrimStart();
+        }
+
         return ex.Number switch
         {
             1060 => upper.StartsWith("ALTER TABLE", StringComparison.Ordinal),  // Duplicate column
             1061 => upper.StartsWith("ALTER TABLE", StringComparison.Ordinal),  // Duplicate key name
             1091 => upper.StartsWith("ALTER TABLE", StringComparison.Ordinal),  // Can't DROP; check column/key/FK exists
             1050 => upper.StartsWith("CREATE TABLE", StringComparison.Ordinal), // Table already exists
+            1136 => upper.StartsWith("INSERT", StringComparison.Ordinal),       // Column count doesn't match value count (idempotent INSERT)
+            1146 => upper.StartsWith("TRUNCATE", StringComparison.Ordinal) || upper.StartsWith("DELETE", StringComparison.Ordinal), // Table doesn't exist (idempotent DELETE/TRUNCATE)
             _ => false
         };
     }

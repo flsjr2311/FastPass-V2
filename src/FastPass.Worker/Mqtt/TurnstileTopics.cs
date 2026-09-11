@@ -24,7 +24,8 @@ public sealed class TurnstileTopics
     public string SubscribeFromAll => $"{_prefix}/+/from/#";
 
     /// <summary>Monta um tópico de comando para uma placa específica.</summary>
-    public string To(string deviceId, string verb) => $"{_prefix}/{deviceId}/to/{verb}";
+    public string To(string deviceId, string verb) => 
+        string.IsNullOrEmpty(verb) ? $"{_prefix}/{deviceId}/to" : $"{_prefix}/{deviceId}/to/{verb}";
 
     /// <summary>
     /// Extrai (deviceId, verb) de um tópico "from". Retorna false se o tópico

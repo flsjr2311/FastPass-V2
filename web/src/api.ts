@@ -3,6 +3,7 @@
   AccessValidationPayload,
   AccessMessageView,
   AccessMessageTemplateView,
+  TurnstileMessageTemplateView,
   SessionView,
   UserView,
   RoleView,
@@ -202,6 +203,11 @@ export const api = {
   listMessageTemplates: () => request<AccessMessageTemplateView[]>('/api/message-templates'),
   updateMessageTemplate: (code: string, payload: { title: string; message: string; backgroundStart: string; backgroundEnd: string; titleColor: string; messageColor: string; titleSize: string; messageSize: string; titleBold: boolean; messageBold: boolean; active: boolean }) =>
     request<AccessMessageTemplateView>(`/api/message-templates/${code}`, { method: 'PUT', body: JSON.stringify(payload) }),
+
+  // ── Templates de mensagens para catracas (Neon 1.3 — MQTT) ──────────────────
+  listTurnstileTemplates: () => request<TurnstileMessageTemplateView[]>('/api/message-templates/turnstile'),
+  updateTurnstileTemplate: (templateId: number, payload: { line1: string; line2: string; active: boolean }) =>
+    request<TurnstileMessageTemplateView>(`/api/message-templates/turnstile/${templateId}`, { method: 'PUT', body: JSON.stringify(payload) }),
 
   // ── Importação de ingressos ───────────────────────────────────────────────
   previewImport: (eventId: string, file: File) => {

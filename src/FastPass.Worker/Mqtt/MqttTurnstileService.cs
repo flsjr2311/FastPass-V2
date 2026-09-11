@@ -130,6 +130,9 @@ public sealed class MqttTurnstileService : BackgroundService
             ? Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment)
             : string.Empty;
 
+        // Log SEMPRE exibido para diagnosticar o que chega
+        _logger.LogInformation("MQTT RX: tópico={Topic}, tamanho={Size} bytes", topic, e.ApplicationMessage.PayloadSegment.Count);
+
         if (!_topics.TryParseFrom(topic, out var deviceId, out var verb))
         {
             _logger.LogDebug("Tópico ignorado (fora do padrão): {Topic}", topic);
@@ -148,7 +151,7 @@ public sealed class MqttTurnstileService : BackgroundService
 
         try
         {
-            var kind = _codec.Decode(verb, payload, out var read, out var telemetry);
+            var kind = _codec.Decode(verb, payload, out var read, out var telemetry, out var accmodeResponse);
             switch (kind)
             {
                 case TurnstileInboundKind.Telemetry:
@@ -165,13 +168,25 @@ public sealed class MqttTurnstileService : BackgroundService
                     }
                     // Envia mensagem inicial do modo operacional (PASSE SEU INGRESSO, CATRACA LIBERADA, etc)
                     // SEMPRE enviar, mesmo se retida, para garantir que o display mostra o modo correto
-                    await SendInitialModeMessageAsync(deviceId);
+                    // TODO: verificar se a catraca aceita mensagens proativas ou apenas como resposta a acc_req
+                    // await SendInitialModeMessageAsync(deviceId);
+                    // Envia configuração de templates (IDs 00-30) para o display da catraca
+                    await SendConfigurationAsync(deviceId);
+                    // Envia configuração de mensagens padrão (/config_msgs.json)
+                    await SendMsgsConfigAsync(deviceId);
+                    // Verifica e ajusta ACCMODE para "11" (Catraca telecomando controle giro)
+                    await SendAccmodeConfigAsync(deviceId);
                     break;
 
                 case TurnstileInboundKind.CredentialRead when read is not null:
                     // Uma leitura também prova que a placa está viva/online.
                     await RecordPresenceAsync(deviceId, null);
                     await HandleReadAsync(deviceId, read);
+                    break;
+
+                case TurnstileInboundKind.AccmodeResponse when accmodeResponse is not null:
+                    // Resposta de configuração ACCMODE: verificar e eventualmente ajustar
+                    await HandleAccmodeResponseAsync(deviceId, accmodeResponse);
                     break;
 
                 default:
@@ -441,6 +456,97 @@ public sealed class MqttTurnstileService : BackgroundService
     }
 
     /// <summary>
+    /// Envia a configuração de templates de mensagens para a catraca (IDs 00-30).
+    /// Neon 1.3: cmd="setconfig" com array de templates.
+    /// Chamado quando catraca fica online (telemetria recebida).
+    /// Best-effort.
+    /// </summary>
+    /// <summary>
+    /// Envia configuração ACCMODE. Best-effort.
+    /// </summary>
+    private async Task HandleAccmodeResponseAsync(string deviceId, TurnstileAccmodeResponse response)
+    {
+        try
+        {
+            _logger.LogInformation("📋 HandleAccmodeResponse para '{Device}': accmode={Accmode}", 
+                deviceId, response.Accmode ?? "unknown");
+
+            // Se o ACCMODE não for "11", enviar setconfig para ajustar
+            if (response.Accmode != "11")
+            {
+                _logger.LogWarning("⚠️ ACCMODE inválido para '{Device}' (atual={Accmode}, esperado=11). Enviando setconfig...", 
+                    deviceId, response.Accmode ?? "unknown");
+
+                var (verb, payload) = _codec.EncodeSetAccmodeCommand("11");
+                await PublishAsync(_topics.To(deviceId, verb), payload);
+            }
+            else
+            {
+                _logger.LogInformation("✅ ACCMODE correto para '{Device}': {Accmode}", deviceId, response.Accmode);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Falha ao processar resposta ACCMODE de '{Device}'.", deviceId);
+        }
+    }
+
+    private async Task SendAccmodeConfigAsync(string deviceId)
+    {
+        try
+        {
+            _logger.LogInformation("📡 SendAccmodeConfig para '{Device}': solicitando getconfig para /config_accmode.json", 
+                deviceId);
+
+            var (verb, payload) = _codec.EncodeGetAccmodeCommand();
+            await PublishAsync(_topics.To(deviceId, verb), payload);
+
+            _logger.LogDebug("Enviada solicitação ACCMODE para '{Device}'", deviceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Falha ao enviar configuração ACCMODE para '{Device}'.", deviceId);
+        }
+    }
+
+    private async Task SendConfigurationAsync(string deviceId)
+    {
+        try
+        {
+            using var scope = _services.CreateScope();
+            var templateService = scope.ServiceProvider.GetRequiredService<ITurnstileMessageTemplateService>();
+
+            // Obter lista de templates ativos (00-30)
+            var templates = await templateService.ListActiveTemplatesForDeviceAsync();
+            
+            _logger.LogInformation("📡 SendConfiguration para '{Device}': {TemplateCount} templates", 
+                deviceId, templates.Count);
+
+            var (verb, payload) = _codec.EncodeGetConfigCommand(templates);
+            await PublishAsync(_topics.To(deviceId, verb), payload);
+
+            _logger.LogDebug("Enviada configuração de templates para '{Device}'", deviceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Falha ao enviar configuração de templates para '{Device}'.", deviceId);
+        }
+    }
+
+    private async Task SendMsgsConfigAsync(string deviceId)
+    {
+        try
+        {
+            var (verb, payload) = _codec.EncodeSetMsgsCommand();
+            await PublishAsync(_topics.To(deviceId, verb), payload);
+            
+            _logger.LogDebug("Enviada configuração de mensagens (/config_msgs.json) para '{Device}'", deviceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Falha ao enviar configuração de mensagens para '{Device}'.", deviceId);
+        }
+    }
     /// Atualiza SOMENTE os metadados (firmware/IP/serial) a partir de uma mensagem
     /// retida, sem mexer em status/last_seen (retida não é sinal de vida). Best-effort.
     /// </summary>

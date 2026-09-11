@@ -33,6 +33,7 @@ builder.Services.AddSingleton<IAccessMessageService, MySqlAccessMessageService>(
 builder.Services.AddSingleton<IAccessAttemptQueryService, MySqlAccessAttemptQueryService>();
 builder.Services.AddSingleton<IAccessValidationService, MySqlAccessValidationService>();
 builder.Services.AddSingleton<ITurnstileMonitoringService, MySqlTurnstileMonitoringService>();
+builder.Services.AddSingleton<ITurnstileMessageTemplateService, MySqlTurnstileMessageTemplateService>();
 builder.Services.AddScoped<ITicketImportService, MySqlTicketImportService>();
 builder.Services.AddSingleton<IValidationReportService, MySqlValidationReportService>();
 builder.Services.AddSingleton<IAuditTrailService, MySqlAuditTrailService>();
@@ -420,6 +421,17 @@ app.MapPut("/api/events/{eventId:guid}/gates/{gateId:guid}/devices/{deviceId:gui
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
+app.MapDelete("/api/events/{eventId:guid}/gates/{gateId:guid}/devices/{deviceId:guid}", async (Guid eventId, Guid gateId, Guid deviceId, ICatalogService svc, HttpContext ctx, CancellationToken ct) =>
+{
+    if (ctx.RequirePermission("dispositivo.gerenciar") is { } e) return e;
+    try
+    {
+        var removed = await svc.RemoveDeviceAsync(eventId, gateId, deviceId, ct);
+        return removed ? Results.NoContent() : Results.NotFound(new { error = "Dispositivo não encontrado ou já removido." });
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
 // Monitoramento GLOBAL de catracas MQTT: todas as placas já vistas (mesmo não cadastradas),
 // status online/offline, firmware/IP e a portaria/evento a que estão atribuídas.
 app.MapGet("/api/turnstiles", async (int? onlineWindowSeconds, ITurnstileMonitoringService svc, HttpContext ctx, CancellationToken ct) =>
@@ -653,6 +665,30 @@ app.MapDelete("/api/events/{eventId:guid}/access-messages/{code}", async (Guid e
     if (ctx.RequirePermission("mensagem.gerenciar") is { } e) return e;
     try { await svc.RestoreDefaultAsync(eventId, code, ct); return Results.Ok(new { message = "Mensagem restaurada ao padrão." }); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Templates de mensagens para catracas (Neon 1.3 — MQTT)
+// Monochrome display: 2 linhas × 16 caracteres (IDs 00-30)
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.MapGet("/api/message-templates/turnstile", async (ITurnstileMessageTemplateService svc, HttpContext ctx, CancellationToken ct) =>
+{
+    if (ctx.RequirePermission("dispositivo.gerenciar") is { } e) return e;
+    return Results.Ok(await svc.ListAsync());
+});
+
+app.MapPut("/api/message-templates/turnstile/{templateId:int}", async (int templateId, UpdateTurnstileMessageTemplateCommand command, ITurnstileMessageTemplateService svc, HttpContext ctx, CancellationToken ct) =>
+{
+    if (ctx.RequirePermission("dispositivo.gerenciar") is { } e) return e;
+    try 
+    { 
+        if (templateId < 0 || templateId > 30)
+            return Results.BadRequest(new { error = "Template ID deve estar entre 0-30." });
+        return Results.Ok(await svc.UpdateAsync(templateId, command)); 
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.NotFound(new { error = ex.Message }); }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
