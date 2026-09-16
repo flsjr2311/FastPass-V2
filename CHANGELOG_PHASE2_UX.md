@@ -35,6 +35,7 @@ Implemented Phase 2 UX improvements for FastPass turnstile management with 3-mod
 - `033_ensure_turnstile_templates_data.sql`: Backup INSERT for templates
 - `034_repopulate_turnstile_templates.sql`: Ensure all 31 templates are populated
 - `035_delete_catraca151_definitively.sql`: Clean up duplicate device entry
+- `036_split_gate_turnstile_mode.sql`: Separa o modo da catraca da política de validação da portaria
 
 ## Technical Details
 
@@ -139,6 +140,64 @@ Added `MigrationValidation.cs` to catch common errors BEFORE execution:
 2. No manual database configuration needed
 3. Catracas will receive ACCMODE="11" on next keepalive
 4. Message templates load from database on each connection
+
+## Correções pós-Phase 2
+
+### 1. Modo por catraca não conseguia voltar a herdar a portaria 🔴 → ✅
+**Sintoma**: escolher "Herdar do padrão" ou clicar em "Remover" gravava um override
+explícito de `Active`. A mensagem dizia "(Herdado da portaria)" enquanto o banco tinha
+um override. O botão de remover nunca removia nada.
+
+**Causa**: o front convertia o `null` em `'Active'` antes de chamar a API
+(`operationMode ?? 'Active'`, em dois call sites), e o backend rejeitava vazio
+(`OperationMode é obrigatório`) e sempre gravava um valor concreto — não existia
+nenhum caminho, nem via API, para voltar ao estado "herda".
+
+**Correção**:
+- `SetDeviceOperationModeCommand.OperationMode` passou a ser `string?`
+- `SetDeviceOperationModeAsync` grava `NULL` quando o valor vem nulo/vazio
+- os dois call sites do front enviam `null` de verdade
+- as mensagens passaram a ser derivadas do `DeviceView` retornado pelo servidor,
+  não do que o front pediu
+
+### 2. Modo da catraca corrompia a política de validação da portaria 🔴 → ✅
+**Sintoma**: `POST /api/access/validate` devolvia
+`400 {"error":"Modo operacional inválido configurado para a portaria."}` e **nenhum
+ingresso passava em nenhuma portaria**.
+
+**Causa**: `fp_event_gates.operation_mode` armazenava dois enums diferentes.
+A Migration 005 criou a coluna para `GateOperationMode`
+(`EntryAndExitValidated`/`EntryValidatedExitFree`) e a Migration 030 tentou recriá-la
+para `TurnstileOperationMode` (`Active`/`Free`/`Blocked`) — o erro 1060 foi tolerado
+pelo migrator e passou batido. `SetGateTurnstileModeAsync` gravava o modo da catraca
+ali, e `MySqlAccessValidationService.ReadGateAsync` não conseguia mais interpretar
+o valor.
+
+**Correção**: Migration `036` cria `fp_event_gates.turnstile_mode`, move os valores
+para a coluna certa e devolve `operation_mode` ao seu domínio. As leituras foram
+separadas em `ListGatesAsync`, `ListDevicesAsync` e `ResolveTurnstileDeviceAsync`.
+
+**Perda de dado**: portarias cujo `operation_mode` já havia sido sobrescrito voltaram
+ao default `EntryAndExitValidated` — o valor original não é recuperável e deve ser
+reconfigurado na aba Matriz.
+
+### 3. Exclusão de catraca dava 500 e a UI não expunha remoção 🔴 → ✅
+**Causa**: `fp_access_attempts.device_id` referencia `fp_devices(id)` com `RESTRICT`.
+O hard delete estourava `MySqlException` não tratada. E o front nunca chamava o
+`DELETE` que já existia na API.
+
+**Correção**: erro 1451 virou `400` com orientação para desativar; a aba Dispositivos
+ganhou **Desativar/Reativar** (reversível) e **Excluir** (com confirmação).
+
+### 4. Ação de linha ambígua na aba Dispositivos ✅
+O único botão dizia "Remover", numa coluna sem cabeçalho e com estilo vermelho
+(`.reset-button`) — lia como "excluir a catraca", mas limpava o override.
+Agora: coluna "Ações", botão **"Herdar portaria"** em estilo neutro, e o vermelho
+reservado para o **"Excluir"**, que é destrutivo de fato.
+
+### 5. `npm run build` estava quebrado ✅
+`App.tsx` usava `TurnstileMessageTemplateView` sem importar o tipo, gerando dois
+`TS2304`. O dev server do Vite não faz typecheck, então o erro só aparecia no build.
 
 ## Future Enhancements
 - Support for custom message templates per event

@@ -18,13 +18,17 @@
 
 ## Testes API (Verificados ✅)
 
-### ✅ Teste 1: Migration 030 Executada
+### ✅ Teste 1: Migrations 030 + 036 Executadas
 ```
 Status: ✅ Completo
-- fp_event_gates.operation_mode criada (DEFAULT 'Active')
-- fp_devices.operation_mode criada (NULL = inherit)
+- fp_devices.operation_mode criada (NULL = inherit)          -> Migration 030
+- fp_event_gates.turnstile_mode criada (DEFAULT 'Active')    -> Migration 036
 - Índices criados para performance
 ```
+
+> A Migration 030 tentava criar `operation_mode` em `fp_event_gates`, mas a coluna já existia
+> desde a 005 com outro domínio de valores (`EntryAndExitValidated` / `EntryValidatedExitFree`).
+> O modo da catraca ficou gravado na coluna errada até a Migration 036 separar os dois conceitos.
 
 ### ✅ Teste 2: GET /api/events/{eventId}/gates
 ```bash
@@ -35,14 +39,19 @@ Response esperado:
   {
     "id": "148f1fa1-d4be-44e1-8697-769d54d82ac2",
     "name": "Camarote",
-    "operationMode": "Free",       # ← Campo novo!
-    "turnstileMode": "Free"        # ← Campo novo!
+    "operationMode": "EntryAndExitValidated",  # política de validação da portaria
+    "turnstileMode": "Free"                    # modo físico da catraca
   }
   ...
 ]
 
 Status: ✅ Completo
 ```
+
+> ⚠️ Os dois campos são **independentes** e vêm de colunas diferentes.
+> Se aparecerem com o mesmo valor de catraca (`Active`/`Free`/`Blocked`) nos dois,
+> o banco está no estado anterior à Migration 036 e a validação de acesso vai falhar
+> com `"Modo operacional inválido configurado para a portaria."`
 
 ### ✅ Teste 3: GET /api/events/{eventId}/devices
 ```bash
@@ -53,8 +62,8 @@ Response esperado:
   {
     "id": "7cc33399-1fb1-4b1b-b62c-36ff7b0bb66b",
     "name": "Catraca 151 - Neon",
-    "operationMode": "Blocked",           # ← Gate mode ou override
-    "operationModeOverride": "Blocked"    # ← Device override (Blocked neste teste)
+    "operationMode": "Blocked",           # ← Modo EFETIVO (override ?? turnstile_mode da portaria)
+    "operationModeOverride": "Blocked"    # ← Override da catraca (null = herda)
   }
   ...
 ]
@@ -75,12 +84,16 @@ Response esperado:
 {
   "id": "148f1fa1-d4be-44e1-8697-769d54d82ac2",
   "name": "Camarote",
-  "operationMode": "Free",      # ← Atualizado!
-  "turnstileMode": "Free"
+  "operationMode": "EntryAndExitValidated",  # ← NÃO muda: é a política de validação
+  "turnstileMode": "Free"                    # ← Atualizado!
 }
 
 Status: ✅ Completo (Camarote mudada para Free)
 ```
+
+> Este endpoint escreve **somente** em `fp_event_gates.turnstile_mode`.
+> Se `operationMode` mudar junto, é o bug corrigido pela Migration 036 e a validação de
+> acesso da portaria vai parar de funcionar.
 
 ### ✅ Teste 5: PUT /api/events/{eventId}/gates/{gateId}/devices/{deviceId}/operation-mode
 ```bash
@@ -95,12 +108,33 @@ Response esperado:
 {
   "id": "7cc33399-1fb1-4b1b-b62c-36ff7b0bb66b",
   "name": "Catraca 151 - Neon",
-  "operationMode": "Blocked",           # ← Gate mode
-  "operationModeOverride": "Blocked"    # ← Device override (override)
+  "operationMode": "Blocked",           # ← Modo EFETIVO (aqui = o override)
+  "operationModeOverride": "Blocked"    # ← Override da catraca
 }
 
 Status: ✅ Completo (Device override para Blocked, gate está Free)
 ```
+
+### ✅ Teste 5b: Remover o override e voltar a herdar a portaria
+```bash
+PUT .../devices/7cc33399-1fb1-4b1b-b62c-36ff7b0bb66b/operation-mode
+
+Body:
+{
+  "operationMode": null
+}
+
+Response esperado (gate em Free):
+{
+  "operationMode": "Free",              # ← Passa a herdar o turnstile_mode da portaria
+  "operationModeOverride": null         # ← Override removido (NULL no banco)
+}
+
+Status: ✅ Completo
+```
+
+> String vazia (`""`) tem o mesmo efeito de `null`. Um valor inválido devolve `400`.
+> É este o caminho usado pelo botão **"Herdar portaria"** na aba Dispositivos.
 
 ### ✅ Teste 6: Display Messages Verificadas
 ```

@@ -101,21 +101,25 @@ A tela exibe um **card para cada portaria (gate)** com 3 botões de modo:
 
 Imagine que a portaria "Pista" está em modo LIBERADA, mas uma catraca específica ("Catraca 151") está com problema.
 
-**Solução**: Override de device (TBD - interface a completar)
+**Solução**: Override de device, na aba **Dispositivos** (implementado).
 
 ```
-Na tela de Dispositivos (future enhancement):
-┌─────────────────────────────────┐
-│ Device: Catraca 151 - Neon      │
-│ Portaria: Pista (LIBERADA)      │
-│ ┌─────────────────────────────┐ │
-│ │ Override de Modo:           │ │
-│ │ • ⚙ Usar padrão da porta   │ ← será LIBERADA
-│ │ • 📖 ATIVA (forçar)        │ ← força leitura
-│ │ • 🔴 BLOQUEADA (forçar)    │ ← força bloqueio
-│ └─────────────────────────────┘ │
-└─────────────────────────────────┘
+Portarias e Setores → aba Dispositivos:
+
+ NOME DA CATRACA   PORTARIA  TIPO  MODO PADRÃO (GATE)  OVERRIDE (DEVICE)   MODO EFETIVO  AÇÕES
+ Catraca 151       Pista     MQTT  🟢 LIBERADA         [Herdar do padrão▾] 🟢 LIBERADA   Desativar  Excluir
+ Catraca 156       Pista     MQTT  🟢 LIBERADA         [🔴 BLOQUEADA    ▾] 🔴 BLOQUEADA  Herdar portaria  Desativar  Excluir
 ```
+
+Opções do seletor de override:
+- **Herdar do padrão** → remove o override (grava `NULL`); o modo efetivo passa a seguir a portaria
+- **📖 ATIVA** / **🟢 LIBERADA** / **🔴 BLOQUEADA** → força o modo só nessa catraca
+
+Ações da linha:
+- **Herdar portaria** → aparece somente quando existe override; é um atalho para removê-lo
+- **Desativar / Reativar** → tira a catraca de operação sem apagar cadastro nem histórico (reversível)
+- **Excluir** → apaga o cadastro. Recusado com `400` se a catraca já tem tentativas de acesso
+  registradas; nesse caso use Desativar
 
 **Resultado**:
 - Gate "Pista": LIBERADA (padrão)
@@ -148,8 +152,12 @@ Clique em botão → API PUT /api/events/{id}/gates/{id}/turnstile-mode → DB a
 
 ### 2. API salva no banco
 ```
-fp_event_gates.operation_mode = 'Free' (exemplo)
+fp_event_gates.turnstile_mode = 'Free' (exemplo)
 ```
+
+> Somente `turnstile_mode` é alterado. A coluna `fp_event_gates.operation_mode` guarda outra
+> coisa: a política de validação da portaria (`EntryAndExitValidated` / `EntryValidatedExitFree`),
+> lida pelo serviço de validação de acesso. Ver Migration 036.
 
 ### 3. Catraca recebe novo modo
 ```
@@ -223,9 +231,10 @@ A interface é **responsiva**:
 
 ## 🎯 Próximas Features (Roadmap)
 
-- [ ] Tabela de dispositivos com override inline
-- [ ] Seletor de override por device
-- [ ] Visualização "Modo Efetivo" por device
+- [x] Tabela de dispositivos com override inline
+- [x] Seletor de override por device (incluindo "Herdar do padrão")
+- [x] Visualização "Modo Efetivo" por device
+- [x] Desativar/Reativar e Excluir catraca pela tela
 - [ ] Bulk-change (mudar modo de várias portarias de uma vez)
 - [ ] Agendamento de mudança de modo (ex.: modo FREE só 20:00-04:00)
 - [ ] Histórico de mudanças (auditoria)

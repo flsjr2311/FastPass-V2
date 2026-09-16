@@ -1,11 +1,35 @@
 # Script para obter IDs válidos do banco de dados e testar a API
+#
+# Requer PowerShell 7+: o Add-Type/carregamento do MySqlConnector (.NET 8) falha no
+# Windows PowerShell 5.1 com ReflectionTypeLoadException.
 
-# Lê a connection string do appsettings.json
-$appsettings = Get-Content 'src/FastPass.Api/appsettings.json' | ConvertFrom-Json
-$connectionString = $appsettings.ConnectionStrings.FastPass
+# Resolve a connection string na mesma ordem de precedência do ASP.NET Core em Development:
+# user-secrets primeiro, appsettings.json como fallback.
+$secretsPath = Join-Path $env:APPDATA 'Microsoft\UserSecrets\FastPass.Api-Development\secrets.json'
+$connectionString = $null
+$origem = 'appsettings.json'
+
+if (Test-Path $secretsPath) {
+    $fromSecrets = (Get-Content $secretsPath -Raw | ConvertFrom-Json).'ConnectionStrings:FastPass'
+    if ($fromSecrets) {
+        $connectionString = $fromSecrets
+        $origem = 'user-secrets (tem precedência sobre o appsettings.json)'
+    }
+}
+
+if (-not $connectionString) {
+    $appsettings = Get-Content 'src/FastPass.Api/appsettings.json' | ConvertFrom-Json
+    $connectionString = $appsettings.ConnectionStrings.FastPass
+}
+
+# Não imprime a senha no console.
+$mascarada = ($connectionString -split ';' | ForEach-Object {
+    if ($_ -match '^\s*(Password|Pwd)\s*=') { (($_ -split '=')[0]) + '=***' } else { $_ }
+}) -join ';'
 
 Write-Host "🔍 Conectando ao banco de dados..." -ForegroundColor Cyan
-Write-Host "Connection: $connectionString`n" -ForegroundColor DarkGray
+Write-Host "Origem: $origem" -ForegroundColor DarkGray
+Write-Host "Connection: $mascarada`n" -ForegroundColor DarkGray
 
 # Define a query SQL
 $sqlQuery = @"

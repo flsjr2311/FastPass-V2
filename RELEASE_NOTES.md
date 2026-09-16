@@ -23,10 +23,17 @@
   - Ação no braço: `KeepLocked` (permanece travada)
 
 #### Hierarquia de Configuração (Gate → Device → Effective Mode)
-- **Gate-level defaults**: Cada portaria tem um modo padrão (`fp_event_gates.operation_mode`)
+- **Gate-level defaults**: Cada portaria tem um modo padrão de catraca (`fp_event_gates.turnstile_mode`)
 - **Device-level overrides**: Cada catraca pode sobrescrever o modo da portaria (`fp_devices.operation_mode`, NULL = herda)
-- **Resolução**: `effectiveMode = device.operation_mode ?? gate.operation_mode`
+- **Resolução**: `effectiveMode = device.operation_mode ?? gate.turnstile_mode`
 - Permite controle em massa (portaria) + exceções individuais (catraca)
+- Para voltar a herdar, envie `operationMode: null` (ou string vazia) no endpoint de override:
+  o valor é gravado como `NULL` em `fp_devices.operation_mode`
+
+> ⚠️ **Não confundir** `fp_event_gates.turnstile_mode` com `fp_event_gates.operation_mode`.
+> São conceitos diferentes que já foram armazenados na mesma coluna (ver Migration 036):
+> - `turnstile_mode` → modo físico da catraca: `Active` | `Free` | `Blocked`
+> - `operation_mode` → política de validação da portaria: `EntryAndExitValidated` | `EntryValidatedExitFree`
 
 #### Mensagens Otimizadas para Display LCD (2 linhas, 16 caracteres cada)
 - Sem quebras de palavras mid-sentence
@@ -41,15 +48,25 @@
   - Retorna: Gate atualizado com `operationMode` e `turnstileMode`
 
 - `PUT /api/events/{eventId}/gates/{gateId}/devices/{deviceId}/operation-mode`
-  - Body: `{"operationMode": "Active|Free|Blocked"}`
+  - Body: `{"operationMode": "Active|Free|Blocked"}` para definir um override
+  - Body: `{"operationMode": null}` (ou `""`) para **remover** o override e voltar a herdar a portaria
   - Requer: `dispositivo.gerenciar`
-  - Retorna: Device atualizado com `operationMode` e `operationModeOverride`
+  - Retorna: Device atualizado com `operationMode` (efetivo) e `operationModeOverride` (`null` quando herda)
+  - Valor inválido continua devolvendo `400`
 
 - `GET /api/events/{eventId}/gates`
   - Retorna: Incluindo `operationMode` e `turnstileMode` (antes não existiam)
 
 - `GET /api/events/{eventId}/devices`
-  - Retorna: Incluindo `operationMode` (gate mode) e `operationModeOverride` (device override)
+  - Retorna: Incluindo `operationMode` (modo **efetivo** já resolvido pelo servidor) e
+    `operationModeOverride` (override da catraca, `null` = herda da portaria)
+  - Aceita `activeOnly` (**default `true`**). Use `activeOnly=false` para incluir catracas desativadas
+
+- `DELETE /api/events/{eventId}/gates/{gateId}/devices/{deviceId}`
+  - Requer: `dispositivo.gerenciar`
+  - Exclusão **destrutiva** do cadastro (`DELETE FROM fp_devices`)
+  - Devolve `400` quando a catraca já tem tentativas de acesso registradas
+    (FK `fp_access_attempts.device_id` é `RESTRICT`); nesse caso, desative a catraca
 
 #### MQTT Turnstile Service
 - `MqttTurnstileService.HandleReadAsync()`: Verifica o modo efetivo **antes** de validar
@@ -59,9 +76,17 @@
 
 #### Database Migrations
 - **Migration 030** (`030_add_turnstile_operation_mode.sql`)
-  - `ALTER TABLE fp_event_gates ADD COLUMN operation_mode VARCHAR(50) DEFAULT 'Active' NOT NULL;`
-  - `ALTER TABLE fp_devices ADD COLUMN operation_mode VARCHAR(50) NULL;` (NULL = inherit)
+  - `ALTER TABLE fp_devices ADD COLUMN operation_mode VARCHAR(50) NULL;` (NULL = inherit) — aplicada com sucesso
+  - `ALTER TABLE fp_event_gates ADD COLUMN operation_mode ...` — **não teve efeito**: a coluna já existia
+    desde a Migration 005 (com outro domínio de valores) e o MySQL devolveu o erro 1060 (Duplicate column),
+    que o `DatabaseMigrator` tolera para `ALTER TABLE`. Foi o que gerou a conflação corrigida na Migration 036.
   - Índices para performance
+
+- **Migration 036** (`036_split_gate_turnstile_mode.sql`)
+  - `ALTER TABLE fp_event_gates ADD COLUMN turnstile_mode VARCHAR(20) NOT NULL DEFAULT 'Active';`
+  - Move para `turnstile_mode` os valores `Active|Free|Blocked` que estavam gravados em `operation_mode`
+  - Devolve `operation_mode` ao domínio de política de validação (`EntryAndExitValidated`)
+  - Índice `idx_event_gates_turnstile_mode`
 
 #### Frontend (TBD)
 - Tela "Catracas" já mostra cada device
@@ -155,11 +180,12 @@
 
 - Nenhum código removido nesta release; apenas adição de campos + lógica
 
-### Migrações de Banco (Migration 030)
+### Migrações de Banco
 
 | # | Arquivo | Conteúdo |
 |----|---------|----------|
-| 030 | `030_add_turnstile_operation_mode.sql` | Adiciona `operation_mode` em gates (default 'Active') e devices (nullable) |
+| 030 | `030_add_turnstile_operation_mode.sql` | Adiciona `operation_mode` em devices (nullable = herda). O `ALTER` em gates não teve efeito: coluna já existia desde a 005 (erro 1060 tolerado) |
+| 036 | `036_split_gate_turnstile_mode.sql` | Cria `fp_event_gates.turnstile_mode` e separa o modo da catraca da política de validação da portaria |
 
 ---
 

@@ -15,7 +15,8 @@ SELECT
     d.id as device_id,
     d.name as device_name,
     d.identifier,
-    d.operation_mode
+    d.operation_mode as device_override,  -- NULL = herda da portaria
+    eg.turnstile_mode as gate_default     -- modo padrão da portaria
 FROM fp_events e
 INNER JOIN fp_event_gates eg ON eg.event_id = e.id AND eg.active = 1
 INNER JOIN fp_gates g ON g.id = eg.gate_id AND g.active = 1
@@ -100,6 +101,26 @@ A catraca voltará a **validar ingressos**!
 
 ---
 
+### Remover o override (voltar a herdar a portaria)
+```
+PUT http://localhost:5088/api/events/EVENT_ID/gates/GATE_ID/devices/DEVICE_ID/operation-mode
+
+Content-Type: application/json
+
+{
+  "operationMode": null
+}
+```
+
+**Resultado esperado:**
+- `operationModeOverride`: `null` (gravado como `NULL` em `fp_devices.operation_mode`)
+- `operationMode`: passa a refletir o `turnstile_mode` da portaria
+
+String vazia (`""`) tem o mesmo efeito. Qualquer outro valor fora de
+`Active|Free|Blocked` devolve `400`.
+
+---
+
 ## 3. Verificar o comportamento na catraca
 
 Após mudar o modo:
@@ -167,18 +188,26 @@ Response:
 
 - ✅ A mudança é **instantânea** (não precisa reiniciar a catraca)
 - ✅ A próxima leitura de ingresso respeitará o novo modo
-- ✅ O banco armazena o modo em `fp_devices.operation_mode`
+- ✅ O banco armazena o override em `fp_devices.operation_mode` (`NULL` = herda da portaria)
+- ✅ O padrão da portaria fica em `fp_event_gates.turnstile_mode`
+- ✅ `operationMode` na resposta é o modo **efetivo** (`override ?? padrão da portaria`);
+  o override em si vem em `operationModeOverride`
 - ✅ Requer permissão: `dispositivo.gerenciar`
-- ✅ Modo padrão ao criar device: `Active`
+- ✅ Modo padrão ao criar device: herda a portaria (sem override)
 
 ---
 
 ## Para usar em produção:
 
-1. Execute a migration no banco:
+1. As migrations são aplicadas automaticamente no startup da API. Para rodar manualmente:
    ```sql
    SOURCE src/FastPass.Infrastructure/Database/Migrations/030_add_turnstile_operation_mode.sql;
+   SOURCE src/FastPass.Infrastructure/Database/Migrations/036_split_gate_turnstile_mode.sql;
    ```
+
+   A 036 é obrigatória: sem ela o modo da catraca é gravado em
+   `fp_event_gates.operation_mode` e a validação de acesso da portaria passa a falhar com
+   `"Modo operacional inválido configurado para a portaria."`
 
 2. Reinicie o FastPass.Api
 

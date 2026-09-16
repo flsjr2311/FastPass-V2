@@ -152,7 +152,7 @@ cd FastPass-V2
 ```json
 {
   "ConnectionStrings": {
-    "FastPass": "Server=127.0.0.1;Port=3306;Database=fastpass_v2_dev;User ID=<user>;Password=<senha>;SslMode=None;"
+    "FastPass": "Server=127.0.0.1;Port=3306;Database=fastpass_v2_dev;User ID=<user>;Password=<senha>;SslMode=None;AllowPublicKeyRetrieval=True;"
   },
   "Auth": {
     "AdminUser": "admin",
@@ -162,13 +162,31 @@ cd FastPass-V2
 }
 ```
 
+> ⚠️ **`AllowPublicKeyRetrieval=True` é obrigatório** com MySQL 8, que usa
+> `caching_sha2_password` por padrão. Sem essa flag (e com `SslMode=None`), o
+> MySqlConnector falha na conexão com:
+> `Authentication method 'caching_sha2_password' failed.`
+
+> ⚠️ **User-secrets tem precedência sobre o `appsettings.json` em Development.**
+> Se existir um `ConnectionStrings:FastPass` nos user-secrets, editar o
+> `appsettings.json` **não tem efeito nenhum** e a alteração é ignorada em silêncio.
+> Antes de depurar conexão, verifique o que está realmente em uso:
+> ```bash
+> dotnet user-secrets list --project src/FastPass.Api
+> ```
+> Para definir a connection string por lá (recomendado, mantém a senha fora do Git):
+> ```bash
+> dotnet user-secrets set "ConnectionStrings:FastPass" "Server=127.0.0.1;Port=3306;Database=fastpass_v2_dev;User ID=<user>;Password=<senha>;SslMode=None;AllowPublicKeyRetrieval=True;" --project src/FastPass.Api
+> ```
+
 3. Execute a API (as migrações rodam automaticamente em Development):
 ```bash
 cd src/FastPass.Api
 dotnet run
 ```
 
-A API estará disponível em `http://localhost:5062`.
+A API estará disponível em `http://localhost:5088` (definido em `Properties/launchSettings.json`).
+Health-check do banco: `GET http://localhost:5088/health/database`.
 
 ## Estrutura do Banco de Dados
 
@@ -199,6 +217,12 @@ As migrações são aplicadas automaticamente no ambiente Development. Arquivos 
 | 020 | Trilha de auditoria de ações (`fp_audit_trail`) |
 | 021 | Identificação do aparelho do app em `fp_access_attempts` |
 | 022 | Presença de catracas MQTT (`fp_turnstile_presence`) para o painel de monitoramento |
+| 030 | Override de modo por catraca (`fp_devices.operation_mode`, NULL = herda da portaria) |
+| 032 | Estrutura da tabela de templates de mensagem da catraca |
+| 033 | Carga de segurança dos templates de mensagem |
+| 034 | Repopulação dos 31 templates (00–30) |
+| 035 | Remoção de device duplicado (Catraca151) |
+| 036 | Separa `fp_event_gates.turnstile_mode` (modo físico da catraca) de `operation_mode` (política de validação da portaria) |
 
 ## Endpoints Principais
 
