@@ -130,11 +130,18 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ turnstileMode }),
     }),
-  setDeviceOperationMode: (eventId: string, gateId: string, deviceId: string, operationMode: string) =>
+  /** `operationMode: null` remove o override e faz a catraca herdar o modo da portaria. */
+  setDeviceOperationMode: (eventId: string, gateId: string, deviceId: string, operationMode: string | null) =>
     request<DeviceView>(`/api/events/${eventId}/gates/${gateId}/devices/${deviceId}/operation-mode`, {
       method: 'PUT',
       body: JSON.stringify({ operationMode }),
     }),
+  /**
+   * Exclui o cadastro da catraca. É destrutivo e a API recusa (400) quando a catraca
+   * já tem tentativas de acesso registradas — nesse caso, desative-a.
+   */
+  removeDevice: (eventId: string, gateId: string, deviceId: string) =>
+    request<void>(`/api/events/${eventId}/gates/${gateId}/devices/${deviceId}`, { method: 'DELETE' }),
   createGate: (eventId: string, payload: { name: string; code?: string }) =>
     request<GateView>(`/api/events/${eventId}/gates`, { method: 'POST', body: JSON.stringify(payload) }),
   listDevices: (eventId: string, gateId?: string, activeOnly = false) => request<DeviceView[]>(`/api/events/${eventId}/devices?${new URLSearchParams({ ...(gateId ? { gateId } : {}), activeOnly: String(activeOnly) }).toString()}`),

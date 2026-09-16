@@ -900,7 +900,7 @@ public sealed class MySqlCatalogService : ICatalogService
             SELECT g.id, g.venue_id, g.name, g.code,
                    (g.active = 1 AND eg.active = 1) AS active,
                    eg.operation_mode,
-                   eg.operation_mode AS turnstile_mode
+                   eg.turnstile_mode
             FROM fp_event_gates eg
             INNER JOIN fp_gates g ON g.id = eg.gate_id
             WHERE eg.event_id = @event_id
@@ -991,10 +991,11 @@ public sealed class MySqlCatalogService : ICatalogService
         await using var connection = _connectionFactory.Create();
         await connection.OpenAsync(cancellationToken);
         await using var update = connection.CreateCommand();
-        // Atualiza operation_mode na portaria (eg) - afeta todas as catracas que herdam
+        // Atualiza turnstile_mode na portaria (eg) - afeta todas as catracas que herdam.
+        // NÃO mexe em operation_mode: aquela coluna é a política de validação da portaria.
         update.CommandText = """
             UPDATE fp_event_gates
-            SET operation_mode = @turnstile_mode
+            SET turnstile_mode = @turnstile_mode
             WHERE event_id = @event_id
               AND gate_id = @gate_id
               AND active = 1;
@@ -1099,7 +1100,7 @@ public sealed class MySqlCatalogService : ICatalogService
         command.CommandText = """
             SELECT d.id, d.gate_id, g.name, g.code, d.name, d.identifier,
                    d.device_type, d.active, d.last_seen_at, d.configuration_json, 
-                   eg.operation_mode as gate_mode, d.operation_mode as device_mode_override
+                   eg.turnstile_mode as gate_mode, d.operation_mode as device_mode_override
             FROM fp_devices d
             INNER JOIN fp_gates g ON g.id = d.gate_id
             INNER JOIN fp_event_gates eg ON eg.gate_id = d.gate_id
@@ -1227,15 +1228,20 @@ public sealed class MySqlCatalogService : ICatalogService
         SetDeviceOperationModeCommand command,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(command.OperationMode))
-        {
-            throw new ArgumentException("OperationMode é obrigatório.");
-        }
+        // OperationMode nulo/vazio = remover o override e voltar a herdar o modo
+        // padrão da portaria (fp_devices.operation_mode = NULL).
+        var clearOverride = string.IsNullOrWhiteSpace(command.OperationMode);
+        string? persistedMode = null;
 
-        // Valida o modo (Active, Free ou Blocked)
-        if (!Enum.TryParse<TurnstileOperationMode>(command.OperationMode, true, out var operationMode))
+        if (!clearOverride)
         {
-            throw new ArgumentException("OperationMode deve ser Active, Free ou Blocked.");
+            // Valida o modo (Active, Free ou Blocked)
+            if (!Enum.TryParse<TurnstileOperationMode>(command.OperationMode, true, out var operationMode))
+            {
+                throw new ArgumentException("OperationMode deve ser Active, Free ou Blocked.");
+            }
+
+            persistedMode = operationMode.ToString();
         }
 
         if (deviceId == Guid.Empty)
@@ -1277,7 +1283,7 @@ public sealed class MySqlCatalogService : ICatalogService
                 WHERE id = @device_id
                   AND gate_id = @gate_id;
                 """, cancellationToken,
-                ("@operation_mode", operationMode.ToString()),
+                ("@operation_mode", (object?)persistedMode ?? DBNull.Value),
                 ("@updated_at", DateTime.UtcNow),
                 ("@device_id", deviceId.ToString()),
                 ("@gate_id", gateId.ToString()));
@@ -1350,6 +1356,15 @@ public sealed class MySqlCatalogService : ICatalogService
             await transaction.CommitAsync(cancellationToken);
             return rowsAffected > 0;
         }
+        catch (MySqlException exception) when (exception.Number == 1451)
+        {
+            // fp_access_attempts.device_id referencia fp_devices(id) com RESTRICT: a catraca
+            // já tem histórico de acesso e apagá-la destruiria a rastreabilidade.
+            await transaction.RollbackAsync(cancellationToken);
+            throw new ArgumentException(
+                "Esta catraca já possui tentativas de acesso registradas e não pode ser excluída. " +
+                "Desative-a para tirá-la de operação preservando o histórico.");
+        }
         catch
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -1369,10 +1384,10 @@ public sealed class MySqlCatalogService : ICatalogService
         // Resolve device ativo pelo identifier -> portaria ativa associada a um evento ativo.
         // Se o mesmo identifier estiver associado a mais de um evento ativo (raro), prioriza
         // o evento em andamento (Running) e o mais recente.
-        // Traz o modo da portaria (eg.operation_mode) e o override do device (d.operation_mode)
+        // Traz o modo de catraca da portaria (eg.turnstile_mode) e o override do device (d.operation_mode)
         command.CommandText = """
             SELECT d.id, d.name, d.identifier, d.device_type, 
-                   eg.operation_mode as gate_mode, d.operation_mode as device_mode_override,
+                   eg.turnstile_mode as gate_mode, d.operation_mode as device_mode_override,
                    g.id, g.name,
                    e.id, e.name, e.status
             FROM fp_devices d

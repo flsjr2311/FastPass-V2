@@ -99,8 +99,15 @@ public sealed record UpdateDeviceCommand(
     string? ConfigurationJson = null,
     bool Active = true);
 
+/// <summary>
+/// Define o override de modo de operação de uma catraca.
+/// <para>
+/// <see cref="OperationMode"/> nulo ou vazio remove o override e faz a catraca
+/// voltar a herdar o modo padrão da portaria.
+/// </para>
+/// </summary>
 public sealed record SetDeviceOperationModeCommand(
-    string OperationMode);
+    string? OperationMode);
 
 public sealed record DeviceView(
     Guid Id,

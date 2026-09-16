@@ -7,6 +7,7 @@ import type {
   TicketSummaryView,
   AccessMessageView,
   AccessMessageTemplateView,
+  TurnstileMessageTemplateView,
   SessionView,
   UserView,
   RoleView,
@@ -1371,15 +1372,62 @@ function ConfigurationView({ eventId }: { eventId: string }) {
     setError(null);
     setMessage(null);
     try {
-      const updated = await api.setDeviceOperationMode(eventId, device.gateId, device.id, operationMode ?? 'Active');
+      // operationMode null é enviado como null para limpar o override no banco.
+      const updated = await api.setDeviceOperationMode(eventId, device.gateId, device.id, operationMode);
       setDevices((current) => current.map((item) => item.id === updated.id ? updated : item));
-      const gateMode = gates.find(g => g.id === device.gateId)?.turnstileMode ?? 'Active';
-      const effectiveMode = operationMode ?? gateMode;
+      // A mensagem reflete o que o servidor persistiu, não o que pedimos.
+      const effectiveMode = updated.operationMode ?? 'Active';
       const modeLabel = effectiveMode === 'Active' ? 'ATIVA' : effectiveMode === 'Free' ? 'LIBERADA' : 'BLOQUEADA';
-      const source = operationMode ? 'Override' : 'Herdado da portaria';
+      const source = updated.operationModeOverride ? 'Override' : 'Herdado da portaria';
       setMessage(`Device "${device.name}" → ${modeLabel} (${source}).`);
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o override do device.');
+    } finally {
+      setDeviceSavingKey(null);
+    }
+  }
+
+  /** Tira a catraca de operação sem apagar nada. Reversível. */
+  async function handleToggleDeviceActive(device: DeviceView) {
+    const key = `device-active:${device.id}`;
+    setDeviceSavingKey(key);
+    setError(null);
+    setMessage(null);
+    try {
+      const updated = await api.updateDevice(eventId, device.gateId, device.id, {
+        name: device.name,
+        identifier: device.identifier ?? undefined,
+        deviceType: device.deviceType,
+        configurationJson: device.configurationJson ?? undefined,
+        active: !device.active,
+      });
+      setDevices((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setMessage(`Catraca "${updated.name}" ${updated.active ? 'reativada' : 'desativada'}.`);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível alterar o status da catraca.');
+    } finally {
+      setDeviceSavingKey(null);
+    }
+  }
+
+  /** Exclui o cadastro da catraca. Destrutivo: a API recusa se já houver histórico de acesso. */
+  async function handleRemoveDevice(device: DeviceView) {
+    const confirmed = window.confirm(
+      `Excluir permanentemente a catraca “${device.name}”?\n\n` +
+      'Isso apaga o cadastro dela neste evento. Se a catraca já registrou acessos, ' +
+      'a exclusão será recusada para preservar a auditoria — nesse caso use Desativar.'
+    );
+    if (!confirmed) return;
+    const key = `device-remove:${device.id}`;
+    setDeviceSavingKey(key);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.removeDevice(eventId, device.gateId, device.id);
+      setDevices((current) => current.filter((item) => item.id !== device.id));
+      setMessage(`Catraca "${device.name}" excluída.`);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível excluir a catraca.');
     } finally {
       setDeviceSavingKey(null);
     }
@@ -1544,7 +1592,7 @@ function ConfigurationView({ eventId }: { eventId: string }) {
               <th>Modo Padrão (Gate)</th>
               <th>Override (Device)</th>
               <th>Modo Efetivo</th>
-              <th style={{ width: '120px' }}></th>
+              <th style={{ width: '280px' }}>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -1555,7 +1603,11 @@ function ConfigurationView({ eventId }: { eventId: string }) {
               const hasModeOverride = Boolean(device.operationModeOverride);
               return (
                 <tr key={device.id} className={hasModeOverride ? 'has-override' : ''}>
-                  <td><strong>{device.name}</strong><small className="table-id">{device.identifier || 'sem identifier'}</small></td>
+                  <td>
+                    <strong>{device.name}</strong>
+                    {!device.active && <small className="muted-text">inativa — fora de operação</small>}
+                    <small className="table-id">{device.identifier || 'sem identifier'}</small>
+                  </td>
                   <td><span>{device.gateName}</span></td>
                   <td><span className="device-type-badge">{device.deviceType}</span></td>
                   <td>
@@ -1584,16 +1636,36 @@ function ConfigurationView({ eventId }: { eventId: string }) {
                     </span>
                   </td>
                   <td className="action-cell">
-                    {hasModeOverride && (
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                      {hasModeOverride && (
+                        <button
+                          className="small-button"
+                          onClick={() => handleSetDeviceOverride(device, null)}
+                          disabled={deviceSavingKey === `device-override:${device.id}`}
+                          title="Remove o override e volta a herdar o modo padrão da portaria"
+                        >
+                          Herdar portaria
+                        </button>
+                      )}
+                      <button
+                        className="small-button"
+                        onClick={() => handleToggleDeviceActive(device)}
+                        disabled={deviceSavingKey === `device-active:${device.id}`}
+                        title={device.active
+                          ? 'Tira a catraca de operação preservando o cadastro e o histórico'
+                          : 'Devolve a catraca para operação'}
+                      >
+                        {device.active ? 'Desativar' : 'Reativar'}
+                      </button>
                       <button
                         className="small-button reset-button"
-                        onClick={() => handleSetDeviceOverride(device, null)}
-                        disabled={deviceSavingKey === `device-override:${device.id}`}
-                        title="Remover override e herdar padrão"
+                        onClick={() => handleRemoveDevice(device)}
+                        disabled={deviceSavingKey === `device-remove:${device.id}`}
+                        title="Exclui o cadastro da catraca. Recusado se ela já registrou acessos."
                       >
-                        Remover
+                        Excluir
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -1803,6 +1875,7 @@ function TurnstileAssignmentModal({ turnstile, onClose }: { turnstile: Turnstile
 function TurnstileModeModal({ turnstile, onClose, onModeChanged }: { turnstile: TurnstileMonitorView; onClose: () => void; onModeChanged: () => void }) {
   const [events, setEvents] = useState<EventView[]>([]);
   const [devices, setDevices] = useState<DeviceView[]>([]);
+  const [gates, setGates] = useState<GateView[]>([]);
   const [selectedMode, setSelectedMode] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1818,6 +1891,9 @@ function TurnstileModeModal({ turnstile, onClose, onModeChanged }: { turnstile: 
         const found = devs.find(d => d.id === turnstile.deviceRegistrationId);
         setSelectedMode(found?.operationModeOverride ?? null);
       }).catch(() => {});
+      // Precisamos do modo padrão real da portaria: DeviceView.operationMode é o
+      // modo EFETIVO, que coincide com o override quando existe um.
+      api.listGates(turnstile.eventId).then(setGates).catch(() => {});
     }
   }, [turnstile]);
 
@@ -1827,10 +1903,14 @@ function TurnstileModeModal({ turnstile, onClose, onModeChanged }: { turnstile: 
     setError(null);
     setMessage(null);
     try {
-      await api.setDeviceOperationMode(turnstile.eventId, device.gateId, device.id, mode ?? 'Active');
-      setSelectedMode(mode);
-      const modeLabel = (mode ?? device.operationMode ?? 'Active') === 'Active' ? 'ATIVA' : (mode ?? device.operationMode) === 'Free' ? 'LIBERADA' : 'BLOQUEADA';
-      const source = mode ? 'override' : 'padrão da portaria';
+      // mode null é enviado como null para remover o override (herda da portaria).
+      const updated = await api.setDeviceOperationMode(turnstile.eventId, device.gateId, device.id, mode);
+      setDevices((current) => current.map((item) => item.id === updated.id ? updated : item));
+      // Estado e mensagem vêm do que o servidor persistiu.
+      setSelectedMode(updated.operationModeOverride ?? null);
+      const effectiveMode = updated.operationMode ?? 'Active';
+      const modeLabel = effectiveMode === 'Active' ? 'ATIVA' : effectiveMode === 'Free' ? 'LIBERADA' : 'BLOQUEADA';
+      const source = updated.operationModeOverride ? 'override' : 'padrão da portaria';
       setMessage(`Modo alterado para ${modeLabel} (${source}). Catraca receberá novo comando no próximo keepalive.`);
       onModeChanged();
     } catch (e: unknown) {
@@ -1840,7 +1920,8 @@ function TurnstileModeModal({ turnstile, onClose, onModeChanged }: { turnstile: 
     }
   }
 
-  const gateMode = device?.operationMode ?? 'Active';
+  // Modo padrão da portaria. Cai para o efetivo do device só enquanto os gates carregam.
+  const gateMode = gates.find((g) => g.id === device?.gateId)?.turnstileMode ?? device?.operationMode ?? 'Active';
   const effectiveMode = selectedMode ?? gateMode;
 
   return (

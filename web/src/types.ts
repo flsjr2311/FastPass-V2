@@ -107,8 +107,9 @@ export interface DeviceView {
   active: boolean;
   lastSeenAt?: string | null;
   configurationJson?: string | null;
-  operationMode?: string | null; // Gate mode (inherited)
-  operationModeOverride?: string | null; // Device override ('Active' | 'Free' | 'Blocked')
+  /** Modo EFETIVO já resolvido pelo servidor: operationModeOverride ?? modo padrão da portaria. */
+  operationMode?: string | null;
+  operationModeOverride?: string | null; // Override da catraca ('Active' | 'Free' | 'Blocked'); null = herda
 }
 
 export interface SectorView {
